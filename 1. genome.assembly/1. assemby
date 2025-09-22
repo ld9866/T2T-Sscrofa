@@ -26,3 +26,12 @@ awk -f /home/lidong/Software/3d-dna-201008/utils/wrap-fasta-sequence.awk tabasco
 # human check
 /home/lidong/Software/3d-dna-201008/run-asm-pipeline-post-review.sh -r tabasco.wrapped.assembly tabasco.wrapped.fa merged_nodups.txt 
 
+# Mitochondrial assembly
+docker run --rm \
+--volume /home/lidong:/work \
+ghcr.io/marcelauliano/mitohifi:master \
+mitohifi.py \
+-c /work/tabasco.hifi.bp.p_ctg.fa \
+-f /work/sequence.fasta \
+-g /work/sequence.gb \
+-t 64 -a animal
