@@ -30,3 +30,6 @@ samtools index -@ 32 tabasco_HiC_sorted.bam
 awk '$11 > 50' methylation_cpg.bed > methylation_cpg.0.5.bed
 # Extract first three columns
 cut -f 1,3 methylation_cpg.0.5.bed > summary.bed
+
+# Genome collinearity
+GetTwoGenomeSyn.pl -InGenomeA Sus_scrofa.Sscrofa11.1.dna.toplevel.fa -InGenomeB tabasco.fa -MappingBin minimap2 -NumThreads 8 -OutPrefix Sus_scrofa.Sscrofa11.1.vs.tabasco
