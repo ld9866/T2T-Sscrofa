@@ -19,7 +19,8 @@ awk 'BEGIN{OFS="\t"}{print $1, $NF}' draft.genome_MboI.txt > draft.genome.chrom.
 -y /ref/draft.genome_MboI.txt \
 -p /ref/draft.genome.chrom.sizes \
 -t 128 &>juicer.log
-# 3DDNA
+
+# 3DDNA-human-correct
 awk -f /home/lidong/Software/3d-dna-201008/utils/wrap-fasta-sequence.awk tabasco.fa > tabasco.wrapped.fa
 /home/lidong/Software/3d-dna-201008/run-asm-pipeline.sh -r 0 tabasco.wrapped.fa merged_nodups.txt
 # human check
