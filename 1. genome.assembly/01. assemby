@@ -1,5 +1,27 @@
 # hifiasm
 hifiasm -o tabasco.hifi.ont.hic -t 256 --h1 tabasco_1.clean.fq.gz --h2 tabasco_2.clean.fq.gz --ul tabasco.ont.fastq.gz tabasco.hifi.fq.gz 2> tabasco.hifi.ont.hic.log
-# awk '/^S/{print ">"$2;print $3}' hifiasm.gfa > hifiasm.fa
+awk '/^S/{print ">"$2;print $3}' hifiasm.gfa > hifiasm.fa
+
 # verkko
+verkko -d tabasco.verrkko --hifi tabasco.hifi.fastq.gz --nano tabasco.ont.fastq.gz --hic1 tabasco.HiC_R1.clean.fastq.gz --hic2 tabasco.HiC_R2.clean.fastq.gz --local-memory 600 2>log
+
+# nextdenovo
+nextDenovo run.cfg
+
+# Hi-C
+# prepare
+python /home/lidong/Software/juicer-1.6/misc/generate_site_positions.py MboI draft.genome tabasco.fasta
+awk 'BEGIN{OFS="\t"}{print $1, $NF}' draft.genome_MboI.txt > draft.genome.chrom.sizes
+# jucier
+/home/lidong/Software/juicer-1.6/CPU/juicer.sh -g tabasco \
+-s MboI \
+-D /home/lidong/Software/juicer-1.6 -z /ref/tabasco.fasta \
+-y /ref/draft.genome_MboI.txt \
+-p /ref/draft.genome.chrom.sizes \
+-t 128 &>juicer.log
+# 3DDNA
+awk -f /home/lidong/Software/3d-dna-201008/utils/wrap-fasta-sequence.awk tabasco.fa > tabasco.wrapped.fa
+/home/lidong/Software/3d-dna-201008/run-asm-pipeline.sh -r 0 tabasco.wrapped.fa merged_nodups.txt
+# human check
+/home/lidong/Software/3d-dna-201008/run-asm-pipeline-post-review.sh -r tabasco.wrapped.assembly tabasco.wrapped.fa merged_nodups.txt 
 
