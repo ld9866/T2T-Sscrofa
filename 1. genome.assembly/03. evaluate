@@ -13,6 +13,10 @@ minimap2 -ax map-ont -t 128 tabasco.fa tabasco.ont.fastq.gz | samtools sort -m 4
 samtools view -@ 32 -Sb tabasco_HiC.fastq.gz.sam | \
 samtools sort -@ 32 -m 4G -o tabasco_HiC_sorted.bam && \
 samtools index -@ 32 tabasco_HiC_sorted.bam
+# depth
+/home/lidong/Software/PanDepth-2.25-Linux-x86_64/pandepth -i tabasco.hifi.bam -w 100000 -o tabasco.hifi.bam.depth &
+/home/lidong/Software/PanDepth-2.25-Linux-x86_64/pandepth -i tabasco.ont.bam -w 100000 -o tabasco.ont.bam.depth &
+/home/lidong/Software/PanDepth-2.25-Linux-x86_64/pandepth -i tabasco.hic.bam -w 100000 -o tabasco.hic.bam.depth &
 
 # Methylation detection
 /home/lidong/Software/dist_modkit_v0.5.0_5120ef7/modkit pileup \
