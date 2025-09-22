@@ -1,1 +1,17 @@
+# Gap filling using quarTeT
+python3 /home/lidong/Software/quarTeT-1.2.5/quartet.py GapFiller \
+  -d Aassembly1.fa \           # Draft assembly
+  -g Aassembly2.fa \           # Gap-filling assembly  
+  -p Aassembly1.impute1.fa \   # Output imputed assembly
+  -t 8                         # Number of threads
 
+# Align ONT data
+minimap2 -ax lr:hq -t 96 Assembly.fa tabasco.ont.combine.fastq.gz | \
+    samtools view -@ 64 -bS - | \
+    samtools sort -@ 64 -o Assembly.sorted.bam -
+samtools index Assembly.sorted.bam
+# Generate PAF file
+minimap2 -x lr:hq -t 96 Assembly.fa tabasco.ont.combine.fastq.gz > Assembly.ont.paf
+# Import IGV to check the gap region
+
+# Correct
