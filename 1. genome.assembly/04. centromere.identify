@@ -1,1 +1,30 @@
+# Quartet
+conda activate quartet
+python3 /home/lidong/Software/quarTeT-1.2.5/quartet.py CentroMiner -i tabasco.t2t.fa -t 64 -p tabasco.cen &
 
+# RepCent
+conda activate RepCent
+centromics -l tabasco.hifi.fastq.gz -g tabasco.fa -pre hifihic -hic merged_nodups.rechr.txt -outdir hifihic -tmpdir hifihic.tmp -ncpu 64  &>hifihic.log
+centromics -l tabasco.ont.fastq.gz -g tabasco.fa -pre onthic -hic merged_nodups.rechr.txt -outdir onthic -tmpdir onthic.tmp -ncpu 64  &>onthic.log
+
+# Hicat
+conda activate hicat3
+python ~/Software/HiCAT-master/HiCAT.py -i chr1.fa -t pig.cen.fasta -th 32 -o chr1 &
+python ~/Software/HiCAT-master/HiCAT.py -i chr2.fa -t pig.cen.fasta -th 32 -o chr2 &
+python ~/Software/HiCAT-master/HiCAT.py -i chr3.fa -t pig.cen.fasta -th 32 -o chr3 &
+python ~/Software/HiCAT-master/HiCAT.py -i chr4.fa -t pig.cen.fasta -th 32 -o chr4 &
+python ~/Software/HiCAT-master/HiCAT.py -i chr5.fa -t pig.cen.fasta -th 32 -o chr5 &
+python ~/Software/HiCAT-master/HiCAT.py -i chr6.fa -t pig.cen.fasta -th 32 -o chr6 &
+python ~/Software/HiCAT-master/HiCAT.py -i chr7.fa -t pig.cen.fasta -th 32 -o chr7 &
+python ~/Software/HiCAT-master/HiCAT.py -i chr8.fa -t pig.cen.fasta -th 32 -o chr8 &
+python ~/Software/HiCAT-master/HiCAT.py -i chr9.fa -t pig.cen.fasta -th 32 -o chr9 &
+python ~/Software/HiCAT-master/HiCAT.py -i chr10.fa -t pig.cen.fasta -th 32 -o chr10 &
+python ~/Software/HiCAT-master/HiCAT.py -i chr11.fa -t pig.cen.fasta -th 32 -o chr11 &
+python ~/Software/HiCAT-master/HiCAT.py -i chr12.fa -t pig.cen.fasta -th 32 -o chr12 &
+python ~/Software/HiCAT-master/HiCAT.py -i chr13.fa -t pig.cen.fasta -th 32 -o chr13 &
+python ~/Software/HiCAT-master/HiCAT.py -i chr14.fa -t pig.cen.fasta -th 32 -o chr14 &
+python ~/Software/HiCAT-master/HiCAT.py -i chr15.fa -t pig.cen.fasta -th 32 -o chr15 &
+python ~/Software/HiCAT-master/HiCAT.py -i chr16.fa -t pig.cen.fasta -th 32 -o chr16 &
+python ~/Software/HiCAT-master/HiCAT.py -i chr17.fa -t pig.cen.fasta -th 32 -o chr17 &
+python ~/Software/HiCAT-master/HiCAT.py -i chr18.fa -t pig.cen.fasta -th 32 -o chr18 &
+python ~/Software/HiCAT-master/HiCAT.py -i chrX.fa -t pig.cen.fasta -th 32 -o chrX &
