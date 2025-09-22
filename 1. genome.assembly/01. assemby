@@ -1,1 +1,5 @@
+# hifiasm
+hifiasm -o tabasco.hifi.ont.hic -t 256 --h1 tabasco_1.clean.fq.gz --h2 tabasco_2.clean.fq.gz --ul tabasco.ont.fastq.gz tabasco.hifi.fq.gz 2> tabasco.hifi.ont.hic.log
+# awk '/^S/{print ">"$2;print $3}' hifiasm.gfa > hifiasm.fa
+# verkko
 
