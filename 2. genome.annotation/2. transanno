@@ -1,0 +1,5 @@
+# Transanno
+minimap2 -cx asm5 -t 8 --cs tabasco.t2t.fa Sus_scrofa.Sscrofa11.1.dna.toplevel.fa > PAF_FILE.paf
+conda activate transanno
+transanno minimap2chain PAF_FILE.paf --output CHAINFILE.chain
+transanno liftgene Sus_scrofa.Sscrofa11.1.114.gff3 --chain CHAINFILE.chain --failed FAILED.gtf.gz --output SUCCEEDED.gtf.gz
