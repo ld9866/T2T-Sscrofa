@@ -3,7 +3,8 @@ python3 /home/lidong/Software/quarTeT-1.2.5/quartet.py TeloExplorer -i tabasco.t
 
 # Kmer
 conda activate merqury
-merqury.sh tabasco.hifi.kmer_db tabasco.t2t.no.Y.MT.fa tabasco.t2t.merqury
+meryl k=21 count tabasco.hifi.fastq.gz output tabasco.hifi.kmer_db threads=128
+merqury.sh tabasco.hifi.kmer_db tabasco.t2t.fa tabasco.t2t.merqury
 
 # Mapping ratio
 minimap2 -ax map-hifi -t 64 tabasco.fa tabascp.hifi.fastq.gz | samtools sort -m 4G -@ 16 -O bam -o tabascp.hifi.bam && samtools index tabascp.hifi.bam 
