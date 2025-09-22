@@ -1,0 +1,5 @@
+# Repeat Analysis
+
+# Generate segmental duplication (SD) annotations using BISER
+biser -o tabasco.softmask.renamed.SD -t 8 tabasco.softmask.fa --gc-heap 10G
+
