@@ -15,3 +15,6 @@ minimap2 -x lr:hq -t 96 Assembly.fa tabasco.ont.combine.fastq.gz > Assembly.ont.
 # Import IGV to check the gap region
 
 # Correct
+# Illumina
+
+# 
