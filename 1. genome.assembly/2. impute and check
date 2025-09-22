@@ -14,7 +14,27 @@ samtools index Assembly.sorted.bam
 minimap2 -x lr:hq -t 96 Assembly.fa tabasco.ont.combine.fastq.gz > Assembly.ont.paf
 # Import IGV to check the gap region
 
-# Correct
-# Illumina
-
-# 
+# Correct (https://github.com/slzarate/parliament2)
+# Illumina mapping 
+docker run --rm --gpus 2 \
+        --volume /home/lidong:/workdir \
+        nvcr.io/nvidia/clara/clara-parabricks:4.2.0-1 \
+        pbrun germline \
+        --gvcf \
+        --ref /workdir/tabasco.fa \
+        --in-fq /workdir/NGS.clean_1.fastq.gz /workdir/NGS.clean_1.fastq.gz \
+        "@RG\tID:tabasco\tLB:lib1\tPL:bar\tSM:tabasco\tPU:tabasco" \
+        --out-bam /workdir/1.mapping/Tibetan/Gansu/tabasco.NGS.bam \
+        --out-variants /workdir/1.mapping/Tibetan/Gansu/tabasco.gvcf
+# Detect 
+docker run \
+  -v /home/lidong/:/home/lidong/in \
+  -v /home/lidong/outputs/:/home/lidong/out \
+dnanexus/parliament2:latest \
+  --bam tabasco.NGS.bam \
+  --bai tabasco.NGS.bai \
+  -r tabasco.fa.gz \
+  --breakdancer \
+  --cnvnator \
+  --manta \
+  --genotype
