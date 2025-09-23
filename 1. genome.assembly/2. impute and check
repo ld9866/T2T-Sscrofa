@@ -18,7 +18,7 @@ minimap2 -x lr:hq -t 96 Assembly.fa tabasco.ont.combine.fastq.gz > Assembly.ont.
 # Illumina mapping 
 docker run --rm --gpus 2 \
         --volume /home/lidong:/workdir \
-        nvcr.io/nvidia/clara/clara-parabricks:4.2.0-1 \
+        nvcr.io/nvidia/clara/clara-parabricks:4.2.1-1 \
         pbrun germline \
         --gvcf \
         --ref /workdir/tabasco.fa \
