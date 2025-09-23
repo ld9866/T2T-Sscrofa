@@ -1,19 +1,42 @@
 # NGS QC
-fastp
+fastp -i ${i}_1.fastq.gz -I ${i}_2.fastq.gz -o ${i}_1.clean.fq.gz -O ${i}_2.clean.fq.gz
 
 # NGS mapping to genome
 docker run --rm --gpus 1 \
 --volume /00.ref:/ref \
 --volume /01.fastq:/workdir \
---volume /data/lidong/:/output \
+--volume /02.output:/output \
 nvcr.io/nvidia/clara/clara-parabricks:4.2.1-1 \
 pbrun germline \
 --fq2bamfast \
 --gvcf \
---ref /ref/tabasco.fa \
+--ref /ref/Sscorfat2t.fa \
 --in-fq /workdir/${i}_1.clean.fq.gz /workdir/${i}_2.clean.fq.gz "@RG\tID:${i}\tLB:lib1\tPL:bar\tSM:${i}\tPU:${i}" \
 --out-bam /output/01.bam/${i}.bam \
 --out-variants /output/02.gvcf/${i}.gvcf  \
 --gpuwrite \
 --low-memory \
 --bwa-cpu-thread-pool 32
+
+# Merge GVCF files using Sentieon
+./bin/sentieon driver -t 128 -r Sscorfat2t.fa --algo GVCFtyper ./tabasco.merge.vcf.gz - < vcf_list
+
+# Extract SNPs and indels from vcf file
+for i in {1..18} X Y;do nohup bcftools view -v snps -r chr$i tabasco.merge.vcf.gz -Oz -o $i.snps.vcf.gz --threads 4 & done
+for i in {1..18} X Y;do nohup bcftools view -v indels -r chr$i tabasco.merge.vcf.gz -Oz -o $i.indels.vcf.gz --threads 4 & done
+
+# Statistical sequencing depth
+for i in {1..18} X Y;do nohup bcftools query -f '%DP\n' $i.snps.vcf.gz > 01.snp.depth/$i.snps.DP.txt & done
+for i in {1..18} X Y;do nohup bcftools query -f '%DP\n' $i.indels.vcf.gz > 02.indel.depth/$i.indels.DP.txt & done
+
+# Quality control of autosomal SNPs and indels loci
+for i in {1..18};do bcftools view --threads 4 -e 'INFO/DP < 7301 | INFO/DP > 65710 | QD < 2.0 | QUAL < 30.0 | MQ < 40.0 | FS > 60.0 | ReadPosRankSum < -8.0 | MQRankSum < -12.5 | SOR > 3.0' -O z -o $i.snps.filtered.vcf.gz $i.snps.vcf.gz & done
+for i in {1..18};do bcftools view --threads 4 -e 'INFO/DP < 6771 | INFO/DP > 60942 | QD < 2.0 | QUAL < 30.0 | MQ < 40.0 | FS > 200.0 | ReadPosRankSum < -20.0 | MQRankSum < -12.5 | SOR > 10.0' -O z -o $i.indels.filtered.vcf.gz $i.indels.vcf.gz & done
+
+# Quality control of X chromosome SNPs and indels loci
+bcftools view --threads 4 -e 'INFO/DP < 5517 | INFO/DP > 49649 | QD < 2.0 | QUAL < 30.0 | MQ < 40.0 | FS > 60.0 | ReadPosRankSum < -8.0 | MQRankSum < -12.5 | SOR > 3.0' -O z -o X.snps.filtered.vcf.gz X.snps.vcf.gz
+bcftools view --threads 4 -e 'INFO/DP < 5221 | INFO/DP > 46989 | QD < 2.0 | QUAL < 30.0 | MQ < 40.0 | FS > 200.0 | ReadPosRankSum < -20.0 | MQRankSum < -12.5 | SOR > 10.0' -O z -o X.indels.filtered.vcf.gz X.indels.vcf.gz
+
+# Simplify vcf file
+for i in {1..18} X;do nohup bcftools annotate -x ^INFO/AC,^FORMAT/GT $i.snps.filtered.vcf.gz -O z -o $i.snps.filtered.simple.vcf.gz & done
+for i in {1..18} X;do nohup bcftools annotate -x ^INFO/AC,^FORMAT/GT $i.indels.filtered.vcf.gz -O z -o $i.indels.filtered.simple.vcf.gz & done
