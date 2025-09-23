@@ -1,3 +1,6 @@
+# NGS QC
+fastp
+
 # NGS mapping to genome
 docker run --rm --gpus 1 \
 --volume /00.ref:/ref \
