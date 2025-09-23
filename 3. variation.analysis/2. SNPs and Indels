@@ -1,1 +1,16 @@
-
+# NGS mapping to genome
+docker run --rm --gpus 1 \
+--volume /00.ref:/ref \
+--volume /01.fastq:/workdir \
+--volume /data/lidong/:/output \
+nvcr.io/nvidia/clara/clara-parabricks:4.2.1-1 \
+pbrun germline \
+--fq2bamfast \
+--gvcf \
+--ref /ref/tabasco.fa \
+--in-fq /workdir/${i}_1.clean.fq.gz /workdir/${i}_2.clean.fq.gz "@RG\tID:${i}\tLB:lib1\tPL:bar\tSM:${i}\tPU:${i}" \
+--out-bam /output/01.bam/${i}.bam \
+--out-variants /output/02.gvcf/${i}.gvcf  \
+--gpuwrite \
+--low-memory \
+--bwa-cpu-thread-pool 32
