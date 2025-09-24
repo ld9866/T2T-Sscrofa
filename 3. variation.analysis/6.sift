@@ -1,0 +1,21 @@
+# Intall sift
+git clone --recursive https://github.com/rvaser/sift4g.git sift4g
+cd sift4g/
+make
+
+git clone https://github.com/pauline-ng/SIFT4G_Create_Genomic_DB.git scripts_to_build_SIFT_db
+
+# Build annotation database
+cd test_files/
+cp homo_sapiens-test.txt <my_org_config.txt>
+mkdir <PARENT_DIR>
+mkdir <PARENT_DIR>/gene-annotation-src
+mkdir <PARENT_DIR>/chr-src
+mkdir <PARENT_DIR>/dbSNP
+mv Sscorfat2t.fa.gz <PARENT_DIR>/chr-src
+mv Sscorfat2t.gtf.gz <PARENT_DIR>/gene-annotation-src
+perl make-SIFT-db-all.pl -config <my_org_config.txt>
+
+# Annotate VCF files with the SIFT Database
+wget https://github.com/pauline-ng/SIFT4G_Annotator/raw/master/SIFT4G_Annotator.jar
+java -jar SIFT4G_Annotator.jar -c -i <Path to input vcf file> -d <Path to SIFT4G database directory> -r <Path to your results folder> -t
