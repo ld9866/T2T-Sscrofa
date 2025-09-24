@@ -1,0 +1,5 @@
+# Calculate Fst
+for i in {1..18} X;do vcftools --gzvcf ${i}.snps.filtered.simple.M2.rename.vcf.gz --fst-window-size 50000 --fst-window-step 25000 --weir-fst-pop A.list --weir-fst-pop B.list --maf 0.05 --out ./chr.AB.${i} & done
+
+# Calculate π
+for i in {1..18} X;do vcftools --gzvcf $i.snps.filtered.simple.M2.rename.vcf.gz --keep A.list --window-pi 50000 --window-pi-step 25000 --out A.chr${i} --maf 0.05 & done
