@@ -1,3 +1,12 @@
+# Convert vcf files to plink format
+plink --vcf Pig.snps.filtered.simple.M2.vcf.gz --make-bed --out 1303.snp
+
+# Quality control
+plink --bfile 1303.snp --geno 0.1 --maf 0.01 --make-bed --out 1303.snp.qc
+plink --bfile 1303.snp.qc --indep-pairwise 1000 1000 0.5 --out 1303.snp.qc.ld
+plink --bfile 1303.snp.qc --extract 1303.snp.qc.d.prune.in --make-bed --out 1303.snp.qc.ld
+plink --bfile 1303.snp.qc.ld --chr-set 18 --distance-matrix --out 1303.snp.qc.ld
+
 # Admixture
 for i in {2..10};
 do
