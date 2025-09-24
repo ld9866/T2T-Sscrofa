@@ -1,1 +1,29 @@
+#!/bin/bash
+# ===============================
+# Script: run_GetTwoGenomeSyn.sh
+# Purpose: Run NGenomeSyn GetTwoGenomeSyn.pl for two genomes
+# ===============================
+
+# Path to NGenomeSyn (modify to your local installation path)
+NGS_BIN="NGenomeSyn/bin"
+
+# Input genome files (example, modify as needed)
+GENOME_A="Duroc.fa"
+GENOME_B="LW.fa"
+
+# Output prefix
+OUT_PREFIX="LW.OUT"
+
+# Number of threads
+THREADS=20
+
+# Run GetTwoGenomeSyn.pl
+${NGS_BIN}/GetTwoGenomeSyn.pl \
+    -InGenomeA "${GENOME_A}" \
+    -InGenomeB "${GENOME_B}" \
+    -MappingBin minimap2 \
+    -NumThreads ${THREADS} \
+    -OutPrefix "${OUT_PREFIX}"
+
+echo "Job finished!"
 
