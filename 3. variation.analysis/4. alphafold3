@@ -1,1 +1,1 @@
-
+# AlphaFold3 was used to predict the structural consequences of coding sequence mutations via the AlphaFold Server (https://alphafoldserver.com/). The predicted protein structures before and after mutation were then visualized in PyMOL, aligned, and compared by calculating the RMSD.
