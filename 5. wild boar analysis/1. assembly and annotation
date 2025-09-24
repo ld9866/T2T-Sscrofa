@@ -1,36 +1,70 @@
-# genome assembly using nextdenovo
-nextDenovo run.cfg
-
-
-# Use CPhasing to map/mount Pore-C data、
-
-## Download C-Phasing and install all dependencies
-git clone https://github.com/wangyibin/CPhasing.git
-
 #!/bin/bash
 # ===========================================
-# Script: cphasing_scaffolding.sh
-# Purpose: Perform manual correction and scaffolding using CPhasing with Pore-C data
+# Script: genome_pipeline.sh
+# Purpose: Perform genome assembly, scaffolding, annotation, and functional annotation
+# Tools: NextDenovo, CPhasing, Egapx, Diamond
 # ===========================================
+
+# -----------------------------
+# Step 1: Genome Assembly
+# -----------------------------
+# Run NextDenovo with configuration file
+nextDenovo run.cfg
+
+# -----------------------------
+# Step 2: Scaffolding with CPhasing
+# -----------------------------
+# Clone CPhasing repository (if not already installed)
+# git clone https://github.com/wangyibin/CPhasing.git
 
 # Activate CPhasing environment
 conda activate cphasing
 
-# -----------------------------
-# Step 1: Manual correction (reviewed assembly)
 # Convert corrected assembly to AGP format
-# Replace "input_assembly" and "chromosome_number" with actual values
+# Replace "assembly_file" and "chromosome_number" with actual values
 cphasing utils assembly2agp groups.review.change1.assembly -n 19
 
+# Convert AGP to FASTA (contig-level output)
+cphasing agp2fasta groups.review.change1.agp polished_genome.fa --contigs > contigs.fasta
+
+# Convert AGP to FASTA (chromosome-level output)
+cphasing agp2fasta groups.review.change1.agp polished_genome.fa > groups.review.asm.fasta
+
+echo "CPhasing scaffolding completed!"
+
+
 # -----------------------------
-# Step 2: Convert AGP to FASTA (contig-level output)
-# Generates contig FASTA file from AGP
-cphasing agp2fasta groups.review.change1.agp European.wild.pig.nextpolish2.fa --contigs > contigs.fasta
+# Step 3: Genome Annotation with Egapx
+# -----------------------------
+# Run Egapx with RNA and Protein evidence
+python3 /path/to/egapx/ui/egapx.py example.RNA.Protein.yaml \
+  -e singularity \
+  -w annotation_workspace \
+  -o annotation_output \
+  -lc /path/to/egapx/local_cache
 
-echo "CPhasing scaffolding pipeline completed!"
 
+# -----------------------------
+# Step 4: Functional Annotation with Diamond
+# -----------------------------
+# Input protein file
+PROTEINS="genome.proteins.fa"
 
+# Diamond databases (replace with actual paths)
+NR_DB="/path/to/databases/NR/nr.dmnd"
+SWISS_DB="/path/to/databases/SwissProt/uniprot.dmnd"
+TREMBL_DB="/path/to/databases/TrEMBL/trembl.dmnd"
 
+# Run Diamond BLASTp against NR
+diamond blastp --max-target-seqs 1 --evalue 1e-5 --max-hsps 1 \
+  -d ${NR_DB} --threads 16 -q ${PROTEINS} -o match2.Nr.tsv &> log.nr
 
-## genome annotation using egapx 
+# Run Diamond BLASTp against Swiss-Prot
+diamond blastp --max-target-seqs 1 --evalue 1e-5 --max-hsps 1 \
+  -d ${SWISS_DB} --threads 10 -q ${PROTEINS} -o match2.SwissProt.tsv &> log.swissprot
 
+# Run Diamond BLASTp against TrEMBL
+diamond blastp --max-target-seqs 1 --evalue 1e-5 --max-hsps 1 \
+  -d ${TREMBL_DB} --threads 16 -q ${PROTEINS} -o match2.TrEMBL.tsv &> log.trembl
+
+echo "Functional annotation completed!"
