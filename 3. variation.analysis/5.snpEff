@@ -1,0 +1,30 @@
+# Install snpEff
+cd dir_path1
+wget https://snpeff.odsp.astrazeneca.com/versions/snpEff_latest_core.zip
+unzip snpEff_latest_core.zip
+
+# Create the required folder
+cd snpEff
+mkdir data && cd data
+mkdir Sscorfa genomes
+
+# Put the required genome files and index files into the genomes folder
+mv dir_path2/Sscorfat2t.fa ./genomes/Sscorfa.fa
+mv dir_path2/Sscorfat2t.fa.fai ./genomes/Sscorfa.fa.fai
+
+# Place the annotation file in the Sscorfa folder and rename it genes.gff
+mv dir_path/Sscorfat2t.gff ./Sscorfa/genes.gff
+
+# Obtain CDS sequence and amino acid sequence
+cd Sscorfa
+gffread genes.gff -g ../genomes/Sscorfa.fa -y protein.fa -x cds.fa
+
+# Configure snpEf/snpEff.config file
+cd dir_path1/snpEff
+echo "Sscorfa.genome:Sscorfa" >> snpEff.config
+
+# Establish annotation database
+java -jar snpEff/snpEff.jar build -gff3 Sscorfa
+
+# Annotate the vcf file
+java -jar snpEff/snpEff.jar -v Sscorfa dir_path3/your.vcf.gz > dir_path3/your.ann.vcf
