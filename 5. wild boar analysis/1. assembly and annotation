@@ -1,5 +1,36 @@
 # genome assembly using nextdenovo
 nextDenovo run.cfg
 
+
+# Use CPhasing to map/mount Pore-C data、
+
+## Download C-Phasing and install all dependencies
+git clone https://github.com/wangyibin/CPhasing.git
+
+#!/bin/bash
+# ===========================================
+# Script: cphasing_scaffolding.sh
+# Purpose: Perform manual correction and scaffolding using CPhasing with Pore-C data
+# ===========================================
+
+# Activate CPhasing environment
+conda activate cphasing
+
+# -----------------------------
+# Step 1: Manual correction (reviewed assembly)
+# Convert corrected assembly to AGP format
+# Replace "input_assembly" and "chromosome_number" with actual values
+cphasing utils assembly2agp groups.review.change1.assembly -n 19
+
+# -----------------------------
+# Step 2: Convert AGP to FASTA (contig-level output)
+# Generates contig FASTA file from AGP
+cphasing agp2fasta groups.review.change1.agp European.wild.pig.nextpolish2.fa --contigs > contigs.fasta
+
+echo "CPhasing scaffolding pipeline completed!"
+
+
+
+
 ## genome annotation using egapx 
 
