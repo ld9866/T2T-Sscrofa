@@ -1,1 +1,13 @@
+# Quality control
+plink --bfile 1303.snp --geno 0.01 --maf 0.1 --make-bed --out 1303.snp.qc2
 
+# Convert plink format files to vcf files
+plink --bfile 1303.snp.qc2 --recode vcf --out 1303.snp.qc2
+bgzip 1303.snp.qc2.vcf
+
+# Extract VCF files based on group information
+for i in `cat list`; do nohup bcftools view -S $i.txt -O z -o $i.vcf.gz 1303.snp.qc2.vcf.gz & done
+
+# Analysis and Visualization
+for i in `cat list`; do nohup PopLDdecay -InVCF $i.vcf.gz -OutStat group.$i & done
+perl /path/PopLDdecay-3.43/bin/Plot_MultiPop.pl -inList group.list -output Fig.all
