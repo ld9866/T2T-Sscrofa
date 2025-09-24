@@ -1,1 +1,5 @@
+# genome assembly using nextdenovo
+nextDenovo run.cfg
+
+## genome annotation using egapx 
 
