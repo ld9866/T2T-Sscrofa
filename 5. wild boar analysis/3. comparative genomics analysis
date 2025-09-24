@@ -1,1 +1,88 @@
+#!/bin/bash
+# ===========================================
+# Script: species_divergence_time_pipeline.sh
+# Purpose: Estimate species divergence times using OrthoFinder, MUSCLE, Gblocks, seqkit, and PAML (mcmctree)
+# ===========================================
 
+# ------------- Step 1: OrthoFinder ----------------
+# Run OrthoFinder to generate Single_Copy_Orthologue_Sequences (protein sequences)
+# Replace "OrthoFinder_source_path" with your installation path
+python OrthoFinder_source/orthofinder.py -t 10 -a 4 -f ./orthofinder_input
+
+# ------------- Step 2: Multiple Sequence Alignment ----------------
+# Replace $i with each sequence file (loop over files if needed)
+muscle -align $i -output $i.aln
+
+# Clean alignment with Gblocks
+Gblocks $i.aln -b4=5 -b5=h -t=p -e=.gblocks
+
+# Sort and reformat sequences
+seqkit sort $i > $i.sorted
+seqkit seq $i.sorted -w 0 > $i.fasta
+
+# Collect results
+mkdir -p aligned_sequences
+mv *.fasta aligned_sequences/
+cd aligned_sequences
+
+# Allow large number of open files
+ulimit -n 102400
+
+# Concatenate all sequences
+paste -d " " *.fasta > all.fa
+
+# Remove spaces
+sed -i "s/ //g" all.fa
+
+# Convert FASTA to PHYLIP format
+# Replace with your Fa2phy.py script location
+python3 Fa2phy.py -i all.fa -o all.rename.phy
+
+# ------------- Step 3: Fossil Calibrations ----------------
+# Obtain a fossil-calibrated tree (tree.txt) using TimeTree or similar resources
+
+# ------------- Step 4: Run mcmctree ----------------
+# Activate environment containing PAML
+conda activate paml
+
+# Run mcmctree with the default control file
+mcmctree mcmctree.ctl
+
+# This will generate several intermediate files.
+# Remove unnecessary files and copy "wag.dat" (available in the PAML "dat" directory) into the working folder.
+
+# Edit tmp0001.ctl and replace content with the following:
+cat > tmp0001.ctl <<EOF
+seqfile = tmp0001.txt
+treefile = tmp0001.trees
+outfile = tmp0001.out
+noisy = 3
+seqtype = 2
+model = 2   * 2: Empirical
+aaRatefile = wag.dat
+fix_alpha = 0
+alpha = .5
+ncatG = 4
+Small_Diff = 0.1e-6
+getSE = 2
+method = 1
+EOF
+
+# Run codeml to generate the Hessian matrix
+codeml tmp0001.ctl
+
+# Rename rst2 to in.BV for mcmctree
+mv rst2 in.BV
+
+# Modify mcmctree.ctl: set "usedata = 2"
+# Copy control files and in.BV into a new directory for the final run
+
+# Run mcmctree again for divergence time estimation
+mcmctree mcmctree.ctl
+
+echo "Species divergence time estimation pipeline completed!"
+
+
+
+
+## 
