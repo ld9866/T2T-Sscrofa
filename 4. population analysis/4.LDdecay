@@ -1,3 +1,6 @@
+# Convert vcf files to plink format
+plink --vcf Pig.snps.filtered.simple.M2.vcf.gz --make-bed --out 1303.snp
+
 # Quality control
 plink --bfile 1303.snp --geno 0.01 --maf 0.1 --make-bed --out 1303.snp.qc2
 
