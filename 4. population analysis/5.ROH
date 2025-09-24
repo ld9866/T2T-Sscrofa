@@ -1,0 +1,85 @@
+# Convert vcf files to plink format
+plink --vcf Pig.snps.filtered.simple.M2.vcf.gz --make-bed --out 1303.snp
+plink --bfile 1303.snp --recode --out 1303.snp
+
+# Quality control
+plink --bfile 1303.snp --geno 0.01 --maf 0.1 --make-bed --out 1303.snp.qc2
+
+# ROH analysis
+plink --bfile 1303.snp.qc2 --homozyg --homozyg-density 500 --homozyg-gap 100 --homozyg-kb 100 --homozyg-snp 50 --homozyg-window-het 1 --homozyg-window-missing 5 --homozyg-window-snp 50 --noweb --out 1303.snp.qc2.ROH
+
+# Calculate the total length of genome coverage
+rm(list=ls())
+library(dplyr)
+options(stringsAsFactors=FALSE)
+options(scipen=999)
+setwd("C:/Users")
+map=read.table('1303.snp.qc.map',header=FALSE)
+dim(map)
+colnames(map)=c('CHR','snp','pos_cM','pos_bp') 
+head(map)
+mapTL= map %>% group_by(CHR) %>% summarise(n=n(),TL=max(pos_bp))
+mapTL = as.data.frame(mapTL) 
+mapTL
+Total_length_bp=sum(mapTL$TL) 
+Total_length_Mb=Total_length_bp/1000000
+Total_length_Mb
+
+# Analyze ROH data
+rm(list=ls())
+library(dplyr)
+options(stringsAsFactors=FALSE)
+options(scipen=999)
+setwd("C:/Users")
+dat=read.table("1303.snp.qc2.ROH.hom",header=TRUE)
+dim(dat)
+str(dat) 
+colnames(dat)
+dat$Mb=dat$KB/1000
+summary(dat)
+idvec=unique(dat$IID)
+length(idvec)
+head(idvec)
+out=matrix(nrow=length(idvec),ncol=9)
+colnames(out)=c('id','nseg','nseg_short','nseg_long','TL_short','TL_long','Froh','Fshort','Flong')
+head(out)
+cnt=0
+for (i in idvec){ 
+  sub=dat[dat$IID==i,]
+  cnt=cnt+1
+  print(cnt)
+  nseg=nrow(sub)
+  
+  TL=sum(sub$Mb) 
+  Froh=TL/2265.503
+  
+  
+  Short=sub[sub$Mb< 1.5,]
+  Long=sub[sub$Mb>= 1.5,]
+  
+  nShort=nrow(Short)
+  nLong=nrow(Long)
+  
+  TL_short=sum(Short$Mb)
+  TL_long=sum(Long$Mb)
+  
+  Fshort= sum(Short$Mb)/2265.503
+  Flong= sum(Long$Mb)/2265.503
+  out[cnt,1]=i
+  out[cnt,2]=nseg
+  out[cnt,3]=nShort
+  out[cnt,4]=nLong
+  out[cnt,5]=TL_short
+  out[cnt,6]=TL_long
+  out[cnt,7]=Froh
+  out[cnt,8]=Fshort
+  out[cnt,9]=Flong 
+}
+out=as.data.frame(out)
+summary(out[,-1])
+output_nameTXT=paste("1303.snp.qc2.ROH",1.5,"Mb.txt",sep="")
+output_nameTXT
+output_nameCSV=paste("1303.snp.qc2.ROH",1.5,"Mb.csv",sep="")
+output_nameCSV
+write.table(out,output_nameTXT,row.names=FALSE,col.names=TRUE)
+write.csv(out,output_nameCSV,row.names=FALSE,col.names=TRUE)
