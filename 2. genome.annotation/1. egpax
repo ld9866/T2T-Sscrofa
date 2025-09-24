@@ -1,1 +1,24 @@
+## Genome annotation using Egapx
+python3 /path/to/egapx/ui/egapx.py example.RNA.Protein.yaml \
+  -e singularity \
+  -w example.all \
+  -o example.all \
+  -lc /path/to/egapx/local_cache
+
+## Extract location bed information
+awk '$3=="gene" && /gene_biotype=protein_coding/ {print $1"\t"$4"\t"$5"\t"$7}' complete.genomic.gff > gene.protein_genes.bed
+
+## Extract all complete rows with gene_biotype=protein_coding
+
+awk '$3=="gene" && /gene_biotype=protein_coding/' complete.genomic.gff > protein_coding_genes.gff
+awk -F'Name=' '{split($2, a, ";"); print a[1]}' protein_coding_genes.gff > gene.list
+grep '^egapxtmp_' gene.list > egapxtmp_genes.list
+
+
+## Extract the longest transcript of the annotation file
+python genome_gtf_long_cds.py complete.genomic.fa complete.genomic.gff
+
+## genome_gtf_long_cds.py
+
+python genome_gtf_long_cds.py complete.genomic.fa complete.genomic.gff
 
