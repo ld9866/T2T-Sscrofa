@@ -1,1 +1,2 @@
-
+# Principal component analysis
+plink -bfile 1303.snp.qc.ld --pca 10 --out 1303.snp.qc.ld
