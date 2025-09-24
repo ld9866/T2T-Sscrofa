@@ -18,7 +18,236 @@ grep '^egapxtmp_' gene.list > egapxtmp_genes.list
 ## Extract the longest transcript of the annotation file
 python genome_gtf_long_cds.py complete.genomic.fa complete.genomic.gff
 
-## genome_gtf_long_cds.py
+## Extract the longest transcript of the annotation file
 
 python genome_gtf_long_cds.py complete.genomic.fa complete.genomic.gff
 
+
+
+
+## genome_gtf_long_cds.py
+
+
+#------------------------------------------------------------------
+#------------------------------------------------------------------
+# Author: Xiangbodi Hai
+# Date: 2019/09/12
+# Script Name: TAIR10.1_sub_longest_cds.py
+# Script Function: Extract the longest coding protein sequences based on Arabidopsis annotation file features
+# Usage: python Script.py genome.fasta genome.gff
+# Output Format:
+#   >geneid1
+#   ATGTTTGGGAAACCCTGCGATGCTACGCT
+#   >geneid2
+#   ATGCCCGTAGCTAGCGATCGTAGCTAGCTAGCT
+#---------------------------------------------------------------------------------------------------
+
+#---------------------------------------------------------------------------------------------------
+# Example of the extraction process
+#---------------------------------------------------------------------------------------------------
+
+# cds = {}
+# If it's not the first gene information, process the multiple protein coding sequences from the previous gene,
+# calculate their lengths and extract the longest coding sequence.
+
+# cds['gene1'] = {}
+# cds['gene1']['pro1'] = [('chr1','+',1,100)]
+# cds['gene1']['pro1'] = [('chr1','+',1,100),('chr1','+',150,200),('chr1','+',250,300),('chr1','+',350,400),('chr1','+',450,500),]
+
+# cds['gene1']['pro2'] = [('chr1','+',1,100)]
+# cds['gene1']['pro2'] = [('chr1','+',1,100),('chr1','+',120,200),('chr1','+',220,300),('chr1','+',320,400),('chr1','+',420,500),]
+
+# cds['gene2'] = {}
+# cds['gene2']['pro3'] = [('chr1','+',1,100)]
+# cds['gene2']['pro3'] = [('chr1','+',1,100),('chr1','+',110,200),('chr1','+',210,300),('chr1','+',310,400),('chr1','+',410,500),]
+
+# cds['gene2']['pro4'] = [('chr1','+',1,100)]
+# cds['gene2']['pro4'] = [('chr1','+',1,100),('chr1','+',100,200),('chr1','+',200,300),('chr1','+',300,400),('chr1','+',400,500),]
+
+# Process the multiple protein coding sequences of the last gene and extract the longest protein coding sequence.
+
+#---------------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------------
+import sys
+import re
+from Bio import SeqIO
+
+
+#---------------------------------------------------------------------------------------------------
+# Define function readgff() to read genome annotation file, return dictionaries for gene, mrna, exon, cds, and longest_cds
+#---------------------------------------------------------------------------------------------------
+def readgff(gff_file):
+    '''
+    Parse GFF file and extract gene, mRNA, exon, CDS information, 
+    identifying the longest CDS for each gene.
+    ''' 
+    g_id = ''
+    gene = {}
+    mrna = {}
+    exon = {}
+    cds = {}
+    longest_cds = {}
+
+    with open(gff_file) as gff:
+        for line in gff:
+            if line.startswith('#'):
+                continue
+            else:
+                line = line.strip()
+                (chrs, ref, features, start, end, dot, strand, start_point, note) = line.split('\t')
+
+                if features == 'gene':
+                #-----------------------------------------------------------------------------------
+                # Before reading the next gene, filter transcripts of the previous gene,
+                # build dictionary of longest transcript for each gene
+                #-----------------------------------------------------------------------------------
+                    if g_id != '':
+                        if cds.get(g_id, None):
+                            temp = {}
+                            for pro, pos in cds[g_id].items():
+                                total_length = 0
+                                for i in pos:
+                                    total_length += int(i[-1]) - int(i[-2]) + 1
+                                temp[pro] = total_length
+                            longest_pro = max(temp, key=temp.get)
+                            longest_cds[g_id] = cds[g_id][longest_pro]
+                    #-------------------------------------------------------------------------------
+                    # If g_id is empty, this is the first gene in annotation, read gene id and build new gene dictionary;
+                    # If g_id is not empty, after finding the longest transcript of previous gene,
+                    # record and store information for the next gene
+                    #-------------------------------------------------------------------------------
+                    g_id = note.split(';')[0].replace('ID=', '')
+                    gene[g_id] = (chrs, strand, start, end)
+                    cds[g_id] = {}
+                    exon[g_id] = {}
+                    mrna[g_id] = {}
+    
+                if features == 'mRNA':
+                    r_id = note.split(';')[0].replace('ID=', '')
+                    mrna[g_id][r_id] = (chrs, strand, start, end)
+
+                if features == 'exon':
+                    r_id = note.split(';')[1].replace('Parent=', '')
+                    if exon[g_id].get(r_id, None):
+                        exon[g_id][r_id].append((chrs, strand, start, end))
+                    else:
+                        exon[g_id][r_id] = [(chrs, strand, start, end)]
+
+                if features == 'CDS':   
+                    c_id = note.split(';')[0].replace('ID=cds-', '')
+                    if cds[g_id].get(c_id, None):
+                        cds[g_id][c_id].append((chrs, strand, start, end))
+                    else:
+                        cds[g_id][c_id] = [(chrs, strand, start, end)]
+                else:
+                    continue
+    #-----------------------------------------------------------------------------------------------
+    # Analyze the longest transcript of the last gene
+    #-----------------------------------------------------------------------------------------------
+    if cds.get(g_id, None):
+        temp = {}
+        for pro, pos in cds[g_id].items():
+            total_length = 0
+            for i in pos:
+                total_length += int(i[-1]) - int(i[-2]) + 1
+            temp[pro] = total_length
+        longest_pro = max(temp, key=temp.get)
+        longest_cds[g_id] = cds[g_id][longest_pro]
+    return gene, mrna, exon, cds, longest_cds
+
+#---------------------------------------------------------------------------------------------------
+# Define function sequence(position) to extract and concatenate ORF based on gene position list
+# longest_cds['gene2'] = [('chr1','+',1,100),('chr1','+',100,200),('chr1','+',200,300),
+#                                                       ('chr1','+',300,400),('chr1','+',400,500),]
+#---------------------------------------------------------------------------------------------------
+
+def sequence(position):
+    '''
+    Extract gene nucleotide sequence based on position parameters provided in the position tuple.
+    For "+" strand: extract sequence directly from start position.
+    For "-" strand: convert to reverse complement sequence.
+    Returns DNA string.
+    
+    Example:
+    5'----ATGGCCATTGTAATGGGCCGCTGAAAGGGTGCCCGATAGCAT----3'
+    3'----TACCGGTAACATTACCCGGCGACTTTCCCACGGGCTATCGTA----5'
+    '''
+    complement = {'A':'T', 'T':'A', 'C':'G', 'G':'C', 'N':'N'}
+    scaffold, strand, start, end = position
+    if strand == '+':
+        dna = Fa[str(scaffold)][int(start)-1:int(end)].upper()
+    if strand == '-':
+        dna1 = Fa[str(scaffold)][int(start)-1:int(end)][::-1].upper()
+        dna = ''.join([complement[i] for i in dna1])
+    return dna
+
+#---------------------------------------------------------------------------------------------------
+# Define function dna_to_aa() to convert nucleotide sequence to amino acid sequence.
+# Input: DNA sequence, Output: AA sequence.
+#---------------------------------------------------------------------------------------------------
+
+def dna_to_aa(dna_seq):
+    '''
+    Define codon to amino acid dictionary, with stop codons represented by '*'
+    '''
+    codon_table = {
+        'TTT':'F', 'TTC':'F', 'TTA':'L', 'TTG':'L', 'CTT':'L', 'CTC':'L', 'CTA':'L', 'CTG':'L', 
+        'ATT':'I', 'ATC':'I', 'ATA':'I', 'ATG':'M', 'GTT':'V', 'GTC':'V', 'GTA':'V', 'GTG':'V', 
+        'TCT':'S', 'TCC':'S', 'TCA':'S', 'TCG':'S', 'CCT':'P', 'CCC':'P', 'CCA':'P', 'CCG':'P', 
+        'ACT':'T', 'ACC':'T', 'ACA':'T', 'ACG':'T', 'GCT':'A', 'GCC':'A', 'GCA':'A', 'GCG':'A',
+        'TAT':'Y', 'TAC':'Y', 'CAT':'H', 'CAC':'H', 'CAA':'Q', 'CAG':'Q', 'AAT':'N', 'AAC':'N', 
+        'AAA':'K', 'AAG':'K', 'GAT':'D', 'GAC':'D', 'GAA':'E', 'GAG':'E', 'TGT':'C', 'TGC':'C', 
+        'TGG':'W', 'CGT':'R', 'CGC':'R', 'CGA':'R', 'CGG':'R', 'AGT':'S', 'AGC':'S', 'AGA':'R', 
+        'AGG':'R', 'GGT':'G', 'GGC':'G', 'GGA':'G', 'GGG':'G', 'TGA':'*', 'TAA':'*', 'TAG':'*',
+    }
+
+    # Create empty list to store translated amino acid sequence
+    aa_seq = []
+    for i in range(0, len(dna_seq)-2, 3):
+        codon = dna_seq[i:i+3]
+        if codon_table.get(codon):
+            aa_seq.append(codon_table[codon])
+        else:
+            aa_seq.append('@')  # Placeholder for unknown codons
+    aa_sequence = "".join(aa_seq)
+    return aa_sequence
+
+#---------------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------------
+
+try:
+    genome = sys.argv[1]
+    gff = sys.argv[2]
+    gene, mrna, exon, cds, longest_cds = readgff(gff)
+    Fa = {rec.id: rec.seq for rec in SeqIO.parse(genome, "fasta")}
+    print('There are {} genes in the genome.'.format(len(gene)))
+    print('There are {} genes with mRNA transcripts.'.format(len(mrna)))
+    print('There are {} genes with CDS transcripts.'.format(len(exon)))
+    print('There are {} longest proteins to be produced.'.format(len(longest_cds)))
+    
+#---------------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------------
+# Output the longest transcripts
+# longest_cds['gene2'] = [('chr1','+',1,100),('chr1','+',100,200),('chr1','+',200,300),('chr1','+',300,400),('chr1','+',400,500),]
+
+except IndexError:
+    print('Please provide both GFF and FASTA files as input!')
+finally:
+    #---------------------------------------------------------------------------------------------------
+    #---------------------------------------------------------------------------------------------------
+    with open("out1.fa", 'w') as output_file:
+        for gene_id, positions in longest_cds.items():
+            nucleotide_seq = ''
+            for position in positions:
+                nucleotide_seq += sequence(position)
+            aa_sequence = dna_to_aa(nucleotide_seq)
+            output_file.write(">" + gene_id + "\n")
+            output_file.write(aa_sequence + "\n")
+
+    print('Program {} has completed successfully!'.format(sys.argv[0]))
+
+#------------------------------------------------------------------
+#------------------------------------------------------------------
+# End of script
+#------------------------------------------------------------------
+#------------------------------------------------------------------
