@@ -1,1 +1,59 @@
+#!/bin/bash
+# ===========================================
+# Script: sv_detection_pipeline.sh
+# Purpose: Perform genome alignment and structural variant (SV) calling 
+#          using minimap2 + samtools + Sniffles2
+# Platforms: PacBio HiFi / ONT / PacBio CLR
+# ===========================================
+
+# -----------------------------
+# Step 1: Align long reads with minimap2
+# -----------------------------
+# Reference genome
+REF="reference.fa"
+
+# Example: PacBio HiFi (highly accurate reads, ~Q20)
+# -ax map-hifi : preset for PacBio HiFi
+minimap2 -t 30 -ax map-hifi ${REF} sample.hifi.fastq.gz \
+  | samtools sort -m4G -@4 -o sample.hifi.bam
+
+# Example: ONT (Nanopore reads, higher error rates)
+# -ax map-ont : preset for ONT
+minimap2 -t 30 -ax map-ont ${REF} sample.ont.fastq.gz \
+  | samtools sort -m4G -@4 -o sample.ont.bam
+
+# Example: PacBio CLR (continuous long reads, high error)
+# -ax map-pb : preset for PacBio CLR
+minimap2 -t 30 -ax map-pb ${REF} sample.clr.fastq.gz \
+  | samtools sort -m4G -@4 -o sample.clr.bam
+
+# Index BAM files
+samtools index sample.hifi.bam
+samtools index sample.ont.bam
+samtools index sample.clr.bam
+
+
+# -----------------------------
+# Step 2: SV calling with Sniffles2
+# -----------------------------
+# (1) Generate .snf file from each BAM (per-sample SV calling)
+sniffles --input sample.hifi.bam --snf sample.hifi.snf
+sniffles --input sample.ont.bam  --snf sample.ont.snf
+sniffles --input sample.clr.bam  --snf sample.clr.snf
+
+# (2) Merge SNF files into a multi-sample VCF
+# Option A: Directly list .snf files
+sniffles --input sample.hifi.snf sample.ont.snf sample.clr.snf --vcf multisample.vcf
+
+# Option B: Use a file list (tsv format, one .snf per line)
+sniffles --input snf_files_list.tsv --vcf multisample.vcf
+
+# (3) Genotype known SVs in a sample
+# Use an existing VCF of known SVs to genotype one sample
+sniffles --input sample.hifi.bam \
+  --genotype-vcf known_svs.vcf \
+  --vcf output_genotypes.vcf
+
+
+echo "SV detection pipeline completed!"
 
