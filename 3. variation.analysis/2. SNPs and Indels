@@ -1,7 +1,84 @@
-# NGS QC
-fastp -i ${i}_1.fastq.gz -I ${i}_2.fastq.gz -o ${i}_1.clean.fq.gz -O ${i}_2.clean.fq.gz
+#!/bin/bash
 
-# NGS mapping to genome
+############################################################
+# NGS Variant Calling Pipeline (SNPs and Indels)
+#
+# Author: Lidong
+#
+# Description:
+# This pipeline performs SNP and indel detection from
+# Illumina short-read sequencing data.
+#
+# Workflow:
+#   1. Quality control using fastp
+#   2. Read mapping and variant calling using Parabricks
+#   3. Compress GVCF files
+#   4. Joint genotyping using Sentieon
+#   5. Extract SNPs and indels by chromosome
+#   6. Depth statistics
+#   7. Variant quality filtering
+#   8. Simplify VCF annotations
+#   9. Retain biallelic variants
+#  10. Build VCF index
+#  11. Merge chromosome VCF files
+#
+# Requirements:
+#   fastp
+#   docker
+#   NVIDIA Parabricks
+#   bgzip
+#   bcftools
+#   Sentieon
+#
+# Input:
+#   Paired-end Illumina FASTQ files
+#
+# Output:
+#   Filtered SNP and indel VCF files
+############################################################
+
+
+# -----------------------------
+# Software paths
+# -----------------------------
+FASTP=fastp
+BCFTOOLS=bcftools
+BGZIP=bgzip
+SENTIEON=./bin/sentieon
+
+
+# -----------------------------
+# Reference genome
+# -----------------------------
+REF=Sscorfat2t.fa
+
+
+# -----------------------------
+# Sample name
+# -----------------------------
+SAMPLE=${i}
+
+
+# -----------------------------
+# Thread settings
+# -----------------------------
+THREADS=128
+BCF_THREADS=4
+
+
+############################################################
+# Step 1: NGS read quality control
+############################################################
+$FASTP \
+-i ${SAMPLE}_1.fastq.gz \
+-I ${SAMPLE}_2.fastq.gz \
+-o ${SAMPLE}_1.clean.fq.gz \
+-O ${SAMPLE}_2.clean.fq.gz
+
+
+############################################################
+# Step 2: Mapping and variant calling using Parabricks
+############################################################
 docker run --rm --gpus 1 \
 --volume /00.ref:/ref \
 --volume /01.fastq:/workdir \
@@ -10,84 +87,191 @@ nvcr.io/nvidia/clara/clara-parabricks:4.2.1-1 \
 pbrun germline \
 --fq2bamfast \
 --gvcf \
---ref /ref/Sscorfat2t.fa \
---in-fq /workdir/${i}_1.clean.fq.gz /workdir/${i}_2.clean.fq.gz "@RG\tID:${i}\tLB:lib1\tPL:bar\tSM:${i}\tPU:${i}" \
---out-bam /output/01.bam/${i}.bam \
---out-variants /output/02.gvcf/${i}.gvcf  \
+--ref /ref/${REF} \
+--in-fq /workdir/${SAMPLE}_1.clean.fq.gz /workdir/${SAMPLE}_2.clean.fq.gz "@RG\tID:${SAMPLE}\tLB:lib1\tPL:bar\tSM:${SAMPLE}\tPU:${SAMPLE}" \
+--out-bam /output/01.bam/${SAMPLE}.bam \
+--out-variants /output/02.gvcf/${SAMPLE}.gvcf \
 --gpuwrite \
 --low-memory \
 --bwa-cpu-thread-pool 32
 
-# Compress GVCF files
-bgzip ${i}.gvcf
 
-# Merge GVCF files using Sentieon
-./bin/sentieon driver -t 128 -r Sscorfat2t.fa --algo GVCFtyper ./tabasco.merge.vcf.gz - < vcf_list
+############################################################
+# Step 3: Compress GVCF
+############################################################
+$BGZIP ${SAMPLE}.gvcf
 
-# Extract SNPs and indels from vcf file
-for i in {1..18} X Y;do nohup bcftools view -v snps -r chr${i} tabasco.merge.vcf.gz -Oz -o ${i}.snps.vcf.gz --threads 4 & done
-for i in {1..18} X Y;do nohup bcftools view -v indels -r chr${i} tabasco.merge.vcf.gz -Oz -o ${i}.indels.vcf.gz --threads 4 & done
 
-# Statistical sequencing depth
-for i in {1..18} X Y;do nohup bcftools query -f '%DP\n' ${i}.snps.vcf.gz > 01.snp.depth/${i}.snps.DP.txt & done
-for i in {1..18} X Y;do nohup bcftools query -f '%DP\n' ${i}.indels.vcf.gz > 02.indel.depth/${i}.indels.DP.txt & done
+############################################################
+# Step 4: Joint genotyping (Sentieon)
+############################################################
+$SENTIEON driver \
+-t ${THREADS} \
+-r ${REF} \
+--algo GVCFtyper \
+./tabasco.merge.vcf.gz \
+- < vcf_list
 
-# Quality control of autosomal SNPs and indels loci
-for i in {1..18};do bcftools view --threads 4 -e 'INFO/DP < 7301 | INFO/DP > 65710 | QD < 2.0 | QUAL < 30.0 | MQ < 40.0 | FS > 60.0 | ReadPosRankSum < -8.0 | MQRankSum < -12.5 | SOR > 3.0' -O z -o ${i}.snps.filtered.vcf.gz ${i}.snps.vcf.gz & done
-for i in {1..18};do bcftools view --threads 4 -e 'INFO/DP < 6771 | INFO/DP > 60942 | QD < 2.0 | QUAL < 30.0 | MQ < 40.0 | FS > 200.0 | ReadPosRankSum < -20.0 | MQRankSum < -12.5 | SOR > 10.0' -O z -o ${i}.indels.filtered.vcf.gz ${i}.indels.vcf.gz & done
 
-# Quality control of X chromosome SNPs and indels loci
-bcftools view --threads 4 -e 'INFO/DP < 5517 | INFO/DP > 49649 | QD < 2.0 | QUAL < 30.0 | MQ < 40.0 | FS > 60.0 | ReadPosRankSum < -8.0 | MQRankSum < -12.5 | SOR > 3.0' -O z -o X.snps.filtered.vcf.gz X.snps.vcf.gz
-bcftools view --threads 4 -e 'INFO/DP < 5221 | INFO/DP > 46989 | QD < 2.0 | QUAL < 30.0 | MQ < 40.0 | FS > 200.0 | ReadPosRankSum < -20.0 | MQRankSum < -12.5 | SOR > 10.0' -O z -o X.indels.filtered.vcf.gz X.indels.vcf.gz
+############################################################
+# Step 5: Extract SNPs and Indels by chromosome
+############################################################
+for chr in {1..18} X Y
+do
+    nohup $BCFTOOLS view \
+    -v snps \
+    -r chr${chr} \
+    tabasco.merge.vcf.gz \
+    -Oz \
+    -o ${chr}.snps.vcf.gz \
+    --threads ${BCF_THREADS} &
+done
 
-# Simplify vcf file
-for i in {1..18} X;do nohup bcftools annotate -x ^INFO/AC,^FORMAT/GT ${i}.snps.filtered.vcf.gz -O z -o ${i}.snps.filtered.simple.vcf.gz & done
-for i in {1..18} X;do nohup bcftools annotate -x ^INFO/AC,^FORMAT/GT ${i}.indels.filtered.vcf.gz -O z -o ${i}.indels.filtered.simple.vcf.gz & done
+for chr in {1..18} X Y
+do
+    nohup $BCFTOOLS view \
+    -v indels \
+    -r chr${chr} \
+    tabasco.merge.vcf.gz \
+    -Oz \
+    -o ${chr}.indels.vcf.gz \
+    --threads ${BCF_THREADS} &
+done
 
-# Retain binary variation
-for i in {1..18} X;do nohup bcftools view -m2 -M2 ${i}.snps.filtered.simple.vcf.gz -O z -o ${i}.snps.filtered.simple.M2.vcf.gz & done
-for i in {1..18} X;do nohup bcftools view -m2 -M2 ${i}.indels.filtered.simple.vcf.gz -O z -o ${i}.indels.filtered.simple.M2.vcf.gz & done
 
-# Build index file
-for i in {1..18} X;do nohup bcftools index ${i}.snps.filtered.simple.M2.vcf.gz & done
-for i in {1..18} X;do nohup bcftools index ${i}.indels.filtered.simple.M2.vcf.gz & done
+############################################################
+# Step 6: Sequencing depth statistics
+############################################################
+for chr in {1..18} X Y
+do
+    nohup $BCFTOOLS query \
+    -f '%DP\n' \
+    ${chr}.snps.vcf.gz \
+    > 01.snp.depth/${chr}.snps.DP.txt &
+done
 
-# Merge autosomal vcf files
-bcftools concat \
-1.snps.filtered.simple.M2.vcf.gz \
-2.snps.filtered.simple.M2.vcf.gz \
-3.snps.filtered.simple.M2.vcf.gz \
-4.snps.filtered.simple.M2.vcf.gz \
-5.snps.filtered.simple.M2.vcf.gz \
-6.snps.filtered.simple.M2.vcf.gz \
-7.snps.filtered.simple.M2.vcf.gz \
-8.snps.filtered.simple.M2.vcf.gz \
-9.snps.filtered.simple.M2.vcf.gz \
-10.snps.filtered.simple.M2.vcf.gz \
-11.snps.filtered.simple.M2.vcf.gz \
-12.snps.filtered.simple.M2.vcf.gz \
-13.snps.filtered.simple.M2.vcf.gz \
-14.snps.filtered.simple.M2.vcf.gz \
-15.snps.filtered.simple.M2.vcf.gz \
-16.snps.filtered.simple.M2.vcf.gz \
-17.snps.filtered.simple.M2.vcf.gz \
-18.snps.filtered.simple.M2.vcf.gz -Oz -o Pig.snps.filtered.simple.M2.vcf.gz
-bcftools concat \
-1.indels.filtered.simple.M2.vcf.gz \
-2.indels.filtered.simple.M2.vcf.gz \
-3.indels.filtered.simple.M2.vcf.gz \
-4.indels.filtered.simple.M2.vcf.gz \
-5.indels.filtered.simple.M2.vcf.gz \
-6.indels.filtered.simple.M2.vcf.gz \
-7.indels.filtered.simple.M2.vcf.gz \
-8.indels.filtered.simple.M2.vcf.gz \
-9.indels.filtered.simple.M2.vcf.gz \
-10.indels.filtered.simple.M2.vcf.gz \
-11.indels.filtered.simple.M2.vcf.gz \
-12.indels.filtered.simple.M2.vcf.gz \
-13.indels.filtered.simple.M2.vcf.gz \
-14.indels.filtered.simple.M2.vcf.gz \
-15.indels.filtered.simple.M2.vcf.gz \
-16.indels.filtered.simple.M2.vcf.gz \
-17.indels.filtered.simple.M2.vcf.gz \
-18.indels.filtered.simple.M2.vcf.gz -Oz -o Pig.indels.filtered.simple.M2.vcf.gz
+for chr in {1..18} X Y
+do
+    nohup $BCFTOOLS query \
+    -f '%DP\n' \
+    ${chr}.indels.vcf.gz \
+    > 02.indel.depth/${chr}.indels.DP.txt &
+done
+
+
+############################################################
+# Step 7: Variant quality filtering (Autosomes)
+############################################################
+for chr in {1..18}
+do
+    $BCFTOOLS view \
+    --threads ${BCF_THREADS} \
+    -e 'INFO/DP < 7301 | INFO/DP > 65710 | QD < 2.0 | QUAL < 30.0 | MQ < 40.0 | FS > 60.0 | ReadPosRankSum < -8.0 | MQRankSum < -12.5 | SOR > 3.0' \
+    -O z \
+    -o ${chr}.snps.filtered.vcf.gz \
+    ${chr}.snps.vcf.gz &
+done
+
+for chr in {1..18}
+do
+    $BCFTOOLS view \
+    --threads ${BCF_THREADS} \
+    -e 'INFO/DP < 6771 | INFO/DP > 60942 | QD < 2.0 | QUAL < 30.0 | MQ < 40.0 | FS > 200.0 | ReadPosRankSum < -20.0 | MQRankSum < -12.5 | SOR > 10.0' \
+    -O z \
+    -o ${chr}.indels.filtered.vcf.gz \
+    ${chr}.indels.vcf.gz &
+done
+
+
+############################################################
+# Step 8: Variant quality filtering (X chromosome)
+############################################################
+$BCFTOOLS view \
+--threads ${BCF_THREADS} \
+-e 'INFO/DP < 5517 | INFO/DP > 49649 | QD < 2.0 | QUAL < 30.0 | MQ < 40.0 | FS > 60.0 | ReadPosRankSum < -8.0 | MQRankSum < -12.5 | SOR > 3.0' \
+-O z \
+-o X.snps.filtered.vcf.gz \
+X.snps.vcf.gz
+
+$BCFTOOLS view \
+--threads ${BCF_THREADS} \
+-e 'INFO/DP < 5221 | INFO/DP > 46989 | QD < 2.0 | QUAL < 30.0 | MQ < 40.0 | FS > 200.0 | ReadPosRankSum < -20.0 | MQRankSum < -12.5 | SOR > 10.0' \
+-O z \
+-o X.indels.filtered.vcf.gz \
+X.indels.vcf.gz
+
+
+############################################################
+# Step 9: Simplify VCF annotations
+############################################################
+for chr in {1..18} X
+do
+    nohup $BCFTOOLS annotate \
+    -x ^INFO/AC,^FORMAT/GT \
+    ${chr}.snps.filtered.vcf.gz \
+    -O z \
+    -o ${chr}.snps.filtered.simple.vcf.gz &
+done
+
+for chr in {1..18} X
+do
+    nohup $BCFTOOLS annotate \
+    -x ^INFO/AC,^FORMAT/GT \
+    ${chr}.indels.filtered.vcf.gz \
+    -O z \
+    -o ${chr}.indels.filtered.simple.vcf.gz &
+done
+
+
+############################################################
+# Step 10: Retain biallelic variants
+############################################################
+for chr in {1..18} X
+do
+    nohup $BCFTOOLS view \
+    -m2 -M2 \
+    ${chr}.snps.filtered.simple.vcf.gz \
+    -O z \
+    -o ${chr}.snps.filtered.simple.M2.vcf.gz &
+done
+
+for chr in {1..18} X
+do
+    nohup $BCFTOOLS view \
+    -m2 -M2 \
+    ${chr}.indels.filtered.simple.vcf.gz \
+    -O z \
+    -o ${chr}.indels.filtered.simple.M2.vcf.gz &
+done
+
+
+############################################################
+# Step 11: Build VCF index
+############################################################
+for chr in {1..18} X
+do
+    nohup $BCFTOOLS index ${chr}.snps.filtered.simple.M2.vcf.gz &
+done
+
+for chr in {1..18} X
+do
+    nohup $BCFTOOLS index ${chr}.indels.filtered.simple.M2.vcf.gz &
+done
+
+
+############################################################
+# Step 12: Merge autosomal VCF files
+############################################################
+$BCFTOOLS concat {1..18}.snps.filtered.simple.M2.vcf.gz \
+-Oz -o Pig.snps.filtered.simple.M2.vcf.gz
+
+$BCFTOOLS concat {1..18}.indels.filtered.simple.M2.vcf.gz \
+-Oz -o Pig.indels.filtered.simple.M2.vcf.gz
+
+
+echo "========================================="
+echo "NGS SNP/Indel Variant Calling Completed"
+echo "Output:"
+echo "  Pig.snps.filtered.simple.M2.vcf.gz"
+echo "  Pig.indels.filtered.simple.M2.vcf.gz"
+echo "========================================="
