@@ -1,5 +1,109 @@
-# Transanno
-minimap2 -cx asm5 -t 8 --cs tabasco.t2t.fa Sus_scrofa.Sscrofa11.1.dna.toplevel.fa > PAF_FILE.paf
-conda activate transanno
-transanno minimap2chain PAF_FILE.paf --output CHAINFILE.chain
-transanno liftgene Sus_scrofa.Sscrofa11.1.114.gff3 --chain CHAINFILE.chain --failed FAILED.gtf.gz --output SUCCEEDED.gtf.gz
+#!/bin/bash
+
+###############################################################################
+# T2T Genome Comprehensive Pipeline: Annotation, Repeats & Liftover
+#
+# Project: Tabasco Pig Genome (T2T)
+# Author: Lidong
+# Date: 2026-03-09
+# Version: 1.1
+#
+# Description:
+#   1. Functional Annotation (Egapx & Longest CDS Extraction)
+#   2. Repeat Elements & Centromere Mapping (SD, rDNA, HiCAT, RepCent)
+#   3. Annotation Liftover from Sscrofa11.1 (Transanno)
+###############################################################################
+
+# =============================================================================
+# 1. Global Configurations & Tool Paths
+# =============================================================================
+# Annotation & Extraction
+EGAPX_PY="/path/to/egapx/ui/egapx.py"
+GENOME_EXTRACT_PY="genome_gtf_long_cds.py"
+QUARTET_PY="/home/lidong/Software/quarTeT-1.2.5/quartet.py"
+HICAT_PY="/home/lidong/Software/HiCAT-master/HiCAT.py"
+
+# Reference Files
+REF_T2T="tabasco.t2t.fa"
+REF_SS11="Sus_scrofa.Sscrofa11.1.dna.toplevel.fa"
+GFF_SS11="Sus_scrofa.Sscrofa11.1.114.gff3"
+SOFTMASK_FA="tabasco.softmask.fa"
+HIC_CONTACTS="merged_nodups.rechr.txt"
+
+# Metadata & Resources
+PREFIX="tabasco"
+THREADS=128
+LIFTOVER_THREADS=16
+
+# =============================================================================
+# 2. TASK CONTROL (1=Run, 0=Skip)
+# =============================================================================
+RUN_EGAPX=1
+RUN_REPEATS=1
+RUN_CENTROMERE=1
+RUN_LIFTOVER=1
+
+# =============================================================================
+# 3. Phase I: De Novo Annotation (Egapx)
+# =============================================================================
+if [ $RUN_EGAPX -eq 1 ]; then
+    echo "[$(date)] STAGE 1: Egapx Annotation & Transcript Extraction..."
+    python3 ${EGAPX_PY} example.RNA.Protein.yaml -e singularity -w ${PREFIX}.egapx_work -o ${PREFIX}.egapx_out -lc ./local_cache
+    
+    # Extract longest CDS
+    python3 ${GENOME_EXTRACT_PY} ${REF_T2T} ${PREFIX}.egapx_out/complete.genomic.gff
+    mv out1.fa ${PREFIX}.longest_protein.fasta
+fi
+
+# =============================================================================
+# 4. Phase II: Repeats & Centromere Analysis
+# =============================================================================
+if [ $RUN_REPEATS -eq 1 ]; then
+    echo "[$(date)] STAGE 2: Repeat & rDNA Analysis..."
+    biser -o ${PREFIX}.SD_ann -t 8 ${SOFTMASK_FA} --gc-heap 10G
+    barrnap --kingdom euk --threads ${THREADS} --outseq ${PREFIX}.rDNA.fa ${REF_T2T} > ${PREFIX}.rDNA.gff
+fi
+
+if [ $RUN_CENTROMERE -eq 1 ]; then
+    echo "[$(date)] STAGE 3: Multimodal Centromere Mapping..."
+    python3 ${QUARTET_PY} CentroMiner -i ${REF_T2T} -t ${THREADS} -p ${PREFIX}.cen &
+    centromics -l tabasco.hifi.fastq.gz -g ${REF_T2T} -pre hifihic -hic ${HIC_CONTACTS} -outdir ./cen_hifihic -ncpu 64 &
+    
+    # HiCAT for each chromosome
+    for chr in {1..18} X; do
+        if [ -f "chr${chr}.fa" ]; then
+            python3 ${HICAT_PY} -i chr${chr}.fa -t pig.cen.fasta -th 32 -o out_hicat_chr${chr} &
+        fi
+    done
+    wait
+fi
+
+# =============================================================================
+# 5. Phase III: Annotation Liftover (Transanno)
+# =============================================================================
+if [ $RUN_LIFTOVER -eq 1 ]; then
+    echo "[$(date)] STAGE 4: Annotation Liftover from Sscrofa11.1..."
+    
+    # Step 5a: Generate alignment and chain file
+    # Using 'asm5' for assembly-to-assembly alignment
+    minimap2 -cx asm5 -t ${LIFTOVER_THREADS} --cs ${REF_T2T} ${REF_SS11} > ${PREFIX}_to_ss11.paf
+    
+    # Convert PAF to CHAIN
+    transanno minimap2chain ${PREFIX}_to_ss11.paf --output ${PREFIX}.chain
+    
+    # Step 5b: Liftgene (GFF transfer)
+    transanno liftgene ${GFF_SS11} \
+        --chain ${PREFIX}.chain \
+        --failed ${PREFIX}.liftover_failed.gtf.gz \
+        --output ${PREFIX}.liftover_succeeded.gtf.gz
+
+    echo "[$(date)] Liftover finished. Success: ${PREFIX}.liftover_succeeded.gtf.gz"
+fi
+
+# =============================================================================
+# 6. Pipeline Summary
+# =============================================================================
+echo "-------------------------------------------------------"
+echo "All T2T Genomic Tasks Completed Successfully!"
+echo "Timestamp: $(date)"
+echo "-------------------------------------------------------"
