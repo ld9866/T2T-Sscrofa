@@ -1,21 +1,149 @@
-# Intall sift
-git clone --recursive https://github.com/rvaser/sift4g.git sift4g
-cd sift4g/
+#!/bin/bash
+
+############################################################
+# Variant Functional Prediction Pipeline using SIFT4G
+#
+# Author: Lidong
+#
+# Description:
+# This pipeline installs SIFT4G, builds a species-specific
+# SIFT database using a reference genome and GTF annotation,
+# and predicts the functional impact of variants from a VCF
+# file.
+#
+# Workflow:
+#   1. Install SIFT4G
+#   2. Download database building scripts
+#   3. Prepare genome and annotation files
+#   4. Configure organism configuration file
+#   5. Build SIFT database
+#   6. Annotate variants using SIFT4G
+#
+# Requirements:
+#   git
+#   make
+#   perl
+#   java
+#
+# Input:
+#   Reference genome (FASTA)
+#   Gene annotation (GTF)
+#   Variant file (VCF)
+#
+# Output:
+#   SIFT annotated variant results
+############################################################
+
+
+# -----------------------------
+# Software paths
+# -----------------------------
+JAVA=java
+PERL=perl
+
+
+# -----------------------------
+# Installation directory
+# -----------------------------
+INSTALL_DIR=/path/to/sift4g
+
+
+# -----------------------------
+# Reference data
+# -----------------------------
+GENOME=Sscorfat2t.fa.gz
+GTF=Sscorfat2t.gtf.gz
+
+
+# -----------------------------
+# Database directory
+# -----------------------------
+DB_DIR=${INSTALL_DIR}/SIFT_DB
+
+
+# -----------------------------
+# VCF file
+# -----------------------------
+VCF=/path/to/your.vcf
+
+
+# -----------------------------
+# Output directory
+# -----------------------------
+RESULT_DIR=${INSTALL_DIR}/SIFT_results
+
+
+############################################################
+# Step 1: Install SIFT4G
+############################################################
+cd ${INSTALL_DIR}
+
+git clone --recursive https://github.com/rvaser/sift4g.git
+cd sift4g
 make
 
-git clone https://github.com/pauline-ng/SIFT4G_Create_Genomic_DB.git scripts_to_build_SIFT_db
 
-# Build annotation database
-cd test_files/
-cp homo_sapiens-test.txt <my_org_config.txt>
-mkdir <PARENT_DIR>
-mkdir <PARENT_DIR>/gene-annotation-src
-mkdir <PARENT_DIR>/chr-src
-mkdir <PARENT_DIR>/dbSNP
-mv Sscorfat2t.fa.gz <PARENT_DIR>/chr-src
-mv Sscorfat2t.gtf.gz <PARENT_DIR>/gene-annotation-src
-perl make-SIFT-db-all.pl -config <my_org_config.txt>
+############################################################
+# Step 2: Download database building scripts
+############################################################
+cd ${INSTALL_DIR}
 
-# Annotate VCF files with the SIFT Database
+git clone https://github.com/pauline-ng/SIFT4G_Create_Genomic_DB.git
+
+
+############################################################
+# Step 3: Prepare database directory structure
+############################################################
+mkdir -p ${DB_DIR}
+mkdir -p ${DB_DIR}/gene-annotation-src
+mkdir -p ${DB_DIR}/chr-src
+mkdir -p ${DB_DIR}/dbSNP
+
+
+############################################################
+# Step 4: Copy genome and annotation files
+############################################################
+cp ${GENOME} ${DB_DIR}/chr-src/
+cp ${GTF} ${DB_DIR}/gene-annotation-src/
+
+
+############################################################
+# Step 5: Configure organism config file
+############################################################
+cd ${INSTALL_DIR}/SIFT4G_Create_Genomic_DB/test_files
+
+cp homo_sapiens-test.txt pig_config.txt
+
+
+############################################################
+# Step 6: Build SIFT database
+############################################################
+$PERL make-SIFT-db-all.pl \
+-config pig_config.txt
+
+
+############################################################
+# Step 7: Download SIFT4G annotator
+############################################################
+cd ${INSTALL_DIR}
+
 wget https://github.com/pauline-ng/SIFT4G_Annotator/raw/master/SIFT4G_Annotator.jar
-java -jar SIFT4G_Annotator.jar -c -i <Path to input vcf file> -d <Path to SIFT4G database directory> -r <Path to your results folder> -t
+
+
+############################################################
+# Step 8: Annotate variants
+############################################################
+mkdir -p ${RESULT_DIR}
+
+$JAVA -jar SIFT4G_Annotator.jar \
+-c \
+-i ${VCF} \
+-d ${DB_DIR} \
+-r ${RESULT_DIR} \
+-t
+
+
+echo "========================================="
+echo " SIFT4G variant annotation completed"
+echo " Results directory: ${RESULT_DIR}"
+echo "========================================="
