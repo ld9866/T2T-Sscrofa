@@ -1,35 +1,111 @@
-# Quartet_telemore
-python3 /home/lidong/Software/quarTeT-1.2.5/quartet.py TeloExplorer -i tabasco.t2t.fa -c animal -p tabasco.tel &
+#!/bin/bash
 
-# Kmer
-conda activate merqury
-meryl k=21 count tabasco.hifi.fastq.gz output tabasco.hifi.kmer_db threads=128
-merqury.sh tabasco.hifi.kmer_db tabasco.t2t.fa tabasco.t2t.merqury
+###############################################################################
+# T2T Genome Quality Assessment & Functional Characterization
+#
+# Author: Lidong
+# Date: 2026-03-09
+# Description:
+#   1. Telomere identification (quarTeT)
+#   2. K-mer based assembly evaluation (Merqury)
+#   3. Multi-platform read mapping & depth profiling (PanDepth)
+#   4. CpG Methylation calling (Modkit)
+#   5. Whole-genome synteny analysis (GetTwoGenomeSyn)
+###############################################################################
 
-# Mapping ratio
-minimap2 -ax map-hifi -t 64 tabasco.fa tabascp.hifi.fastq.gz | samtools sort -m 4G -@ 16 -O bam -o tabascp.hifi.bam && samtools index tabascp.hifi.bam 
-minimap2 -ax map-ont -t 128 tabasco.fa tabasco.ont.fastq.gz | samtools sort -m 4G -@ 16 -O bam -o tabasco.ont.bam && samtools index tabasco.ont.bam
-# translate to bam
-samtools view -@ 32 -Sb tabasco_HiC.fastq.gz.sam | \
-samtools sort -@ 32 -m 4G -o tabasco_HiC_sorted.bam && \
-samtools index -@ 32 tabasco_HiC_sorted.bam
-# depth
-/home/lidong/Software/PanDepth-2.25-Linux-x86_64/pandepth -i tabasco.hifi.bam -w 100000 -o tabasco.hifi.bam.depth &
-/home/lidong/Software/PanDepth-2.25-Linux-x86_64/pandepth -i tabasco.ont.bam -w 100000 -o tabasco.ont.bam.depth &
-/home/lidong/Software/PanDepth-2.25-Linux-x86_64/pandepth -i tabasco.hic.bam -w 100000 -o tabasco.hic.bam.depth &
+# =============================================================================
+# 1. Configuration & Paths
+# =============================================================================
+# Software Binaries
+QUARTET_PY="/home/lidong/Software/quarTeT-1.2.5/quartet.py"
+PANDEPTH="/home/lidong/Software/PanDepth-2.25-Linux-x86_64/pandepth"
+MODKIT="/home/lidong/Software/dist_modkit_v0.5.0_5120ef7/modkit"
 
-# Methylation detection
-/home/lidong/Software/dist_modkit_v0.5.0_5120ef7/modkit pileup \
-  --reference tabasco.t2t.no.Y.MT.fa \
-  --threads 64 \
-  --cpg \
-  --combine-strands \
-  merged.hifi_reads.aligned.bam \
-  methylation_cpg.bed
-# Quality control with threshold 0.5
-awk '$11 > 50' methylation_cpg.bed > methylation_cpg.0.5.bed
-# Extract first three columns
-cut -f 1,3 methylation_cpg.0.5.bed > summary.bed
+# Reference Genomes
+REF_T2T="tabasco.t2t.fa"
+REF_CLEAN="tabasco.t2t.no.Y.MT.fa"  # Exclude Y and MT for specific analyses
+REF_SS11="Sus_scrofa.Sscrofa11.1.dna.toplevel.fa"
 
-# Genome collinearity
-GetTwoGenomeSyn.pl -InGenomeA Sus_scrofa.Sscrofa11.1.dna.toplevel.fa -InGenomeB tabasco.fa -MappingBin minimap2 -NumThreads 8 -OutPrefix Sus_scrofa.Sscrofa11.1.vs.tabasco
+# Input Data
+HIFI_FASTQ="tabasco.hifi.fastq.gz"
+ONT_FASTQ="tabasco.ont.fastq.gz"
+HIFI_BAM="merged.hifi_reads.aligned.bam"
+
+# Global Parameters
+THREADS=128
+WINDOW_SIZE=100000
+
+# =============================================================================
+# 2. Structural & Quality Metrics
+# =============================================================================
+
+## --- Phase 2a: Telomere Identification ---
+echo "[$(date)] Exploring telomere repeats..."
+python3 ${QUARTET_PY} TeloExplorer \
+    -i ${REF_T2T} \
+    -c animal \
+    -p ${PREFIX}.telo > ${PREFIX}.telo.log 2>&1 &
+
+## --- Phase 2b: K-mer Based Evaluation (Merqury) ---
+echo "[$(date)] Evaluating assembly completeness and QV with Merqury..."
+# Ensure 'merqury' environment is managed via script or pre-activated
+meryl k=21 count ${HIFI_FASTQ} output ${PREFIX}.hifi.kmer_db threads=${THREADS}
+merqury.sh ${PREFIX}.hifi.kmer_db ${REF_T2T} ${PREFIX}.t2t.merqury
+
+# =============================================================================
+# 3. Read Mapping & Depth Profiling
+# =============================================================================
+echo "[$(date)] Starting multi-platform read mapping..."
+
+# HiFi Mapping
+minimap2 -ax map-hifi -t 64 ${REF_T2T} ${HIFI_FASTQ} | \
+    samtools sort -m 4G -@ 16 -O bam -o ${PREFIX}.hifi.bam && \
+    samtools index ${PREFIX}.hifi.bam
+
+# ONT Mapping
+minimap2 -ax map-ont -t ${THREADS} ${REF_T2T} ${ONT_FASTQ} | \
+    samtools sort -m 4G -@ 16 -O bam -o ${PREFIX}.ont.bam && \
+    samtools index ${PREFIX}.ont.bam
+
+# Depth Profiling (PanDepth)
+echo "[$(date)] Calculating genomic depth (window: ${WINDOW_SIZE})..."
+${PANDEPTH} -i ${PREFIX}.hifi.bam -w ${WINDOW_SIZE} -o ${PREFIX}.hifi.depth &
+${PANDEPTH} -i ${PREFIX}.ont.bam -w ${WINDOW_SIZE} -o ${PREFIX}.ont.depth &
+
+# =============================================================================
+# 4. Epigenetic Analysis: Methylation Calling
+# =============================================================================
+echo "[$(date)] Performing CpG methylation pileup..."
+
+${MODKIT} pileup \
+    --reference ${REF_CLEAN} \
+    --threads 64 \
+    --cpg \
+    --combine-strands \
+    ${HIFI_BAM} \
+    ${PREFIX}.methylation_cpg.bed
+
+# Post-processing: Filter by quality threshold (0.5)
+echo "[$(date)] Filtering methylation sites (threshold > 0.5)..."
+awk '$11 > 50' ${PREFIX}.methylation_cpg.bed > ${PREFIX}.methylation_cpg.0.5.bed
+cut -f 1,3 ${PREFIX}.methylation_cpg.0.5.bed > ${PREFIX}.methylation.summary.bed
+
+# =============================================================================
+# 5. Comparative Genomics: Synteny Analysis
+# =============================================================================
+echo "[$(date)] Running genome-wide collinearity analysis..."
+
+GetTwoGenomeSyn.pl \
+    -InGenomeA ${REF_SS11} \
+    -InGenomeB ${REF_T2T} \
+    -MappingBin minimap2 \
+    -NumThreads 16 \
+    -OutPrefix ${REF_SS11%.*}_vs_${PREFIX}
+
+# =============================================================================
+# 6. Completion Summary
+# =============================================================================
+echo "-------------------------------------------------------"
+echo "QC & Characterization Pipeline Completed at $(date)"
+echo "Check Merqury QV and TeloExplorer results for T2T status."
+echo "-------------------------------------------------------"
