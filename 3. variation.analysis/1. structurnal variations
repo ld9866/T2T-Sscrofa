@@ -1,59 +1,165 @@
 #!/bin/bash
-# ===========================================
-# Script: sv_detection_pipeline.sh
-# Purpose: Perform genome alignment and structural variant (SV) calling 
-#          using minimap2 + samtools + Sniffles2
-# Platforms: PacBio HiFi / ONT / PacBio CLR
-# ===========================================
+
+############################################################
+# Structural Variant Detection Pipeline
+#
+# Author: Lidong
+#
+# Description:
+# This pipeline performs structural variant (SV) detection
+# from long-read sequencing data using:
+#
+#   1. minimap2  : long-read alignment
+#   2. samtools  : BAM sorting and indexing
+#   3. Sniffles2 : structural variant detection
+#
+# Supported sequencing platforms:
+#   - PacBio HiFi
+#   - Oxford Nanopore (ONT)
+#   - PacBio CLR
+#
+# Workflow:
+#   Step 1. Align reads to reference genome
+#   Step 2. Sort and index BAM files
+#   Step 3. Generate per-sample SNF files
+#   Step 4. Merge SNF files to multi-sample VCF
+#   Step 5. (Optional) Genotype known SVs
+#
+# Requirements:
+#   minimap2  >= 2.24
+#   samtools  >= 1.15
+#   sniffles2 >= 2.0
+#
+# Input:
+#   reference genome (FASTA)
+#   long-read FASTQ files
+#
+# Output:
+#   Sorted BAM files
+#   SNF files
+#   Multi-sample SV VCF
+############################################################
+
 
 # -----------------------------
-# Step 1: Align long reads with minimap2
+# Software paths
 # -----------------------------
-# Reference genome
-REF="reference.fa"
-
-# Example: PacBio HiFi (highly accurate reads, ~Q20)
-# -ax map-hifi : preset for PacBio HiFi
-minimap2 -t 30 -ax map-hifi ${REF} sample.hifi.fastq.gz \
-  | samtools sort -m4G -@4 -o sample.hifi.bam
-
-# Example: ONT (Nanopore reads, higher error rates)
-# -ax map-ont : preset for ONT
-minimap2 -t 30 -ax map-ont ${REF} sample.ont.fastq.gz \
-  | samtools sort -m4G -@4 -o sample.ont.bam
-
-# Example: PacBio CLR (continuous long reads, high error)
-# -ax map-pb : preset for PacBio CLR
-minimap2 -t 30 -ax map-pb ${REF} sample.clr.fastq.gz \
-  | samtools sort -m4G -@4 -o sample.clr.bam
-
-# Index BAM files
-samtools index sample.hifi.bam
-samtools index sample.ont.bam
-samtools index sample.clr.bam
+MINIMAP2=minimap2
+SAMTOOLS=samtools
+SNIFFLES=sniffles
 
 
 # -----------------------------
-# Step 2: SV calling with Sniffles2
+# Input files
 # -----------------------------
-# (1) Generate .snf file from each BAM (per-sample SV calling)
-sniffles --input sample.hifi.bam --snf sample.hifi.snf
-sniffles --input sample.ont.bam  --snf sample.ont.snf
-sniffles --input sample.clr.bam  --snf sample.clr.snf
+REF=reference.fa
 
-# (2) Merge SNF files into a multi-sample VCF
-# Option A: Directly list .snf files
-sniffles --input sample.hifi.snf sample.ont.snf sample.clr.snf --vcf multisample.vcf
-
-# Option B: Use a file list (tsv format, one .snf per line)
-sniffles --input snf_files_list.tsv --vcf multisample.vcf
-
-# (3) Genotype known SVs in a sample
-# Use an existing VCF of known SVs to genotype one sample
-sniffles --input sample.hifi.bam \
-  --genotype-vcf known_svs.vcf \
-  --vcf output_genotypes.vcf
+HIFI_READS=sample.hifi.fastq.gz
+ONT_READS=sample.ont.fastq.gz
+CLR_READS=sample.clr.fastq.gz
 
 
-echo "SV detection pipeline completed!"
+# -----------------------------
+# Output prefix
+# -----------------------------
+HIFI_PREFIX=sample.hifi
+ONT_PREFIX=sample.ont
+CLR_PREFIX=sample.clr
 
+
+# -----------------------------
+# Thread settings
+# -----------------------------
+THREADS=30
+SORT_THREADS=4
+SORT_MEM=4G
+
+
+############################################################
+# Step 1: Align PacBio HiFi reads
+############################################################
+$MINIMAP2 \
+-t ${THREADS} \
+-ax map-hifi \
+${REF} \
+${HIFI_READS} \
+| $SAMTOOLS sort \
+-m ${SORT_MEM} \
+-@ ${SORT_THREADS} \
+-o ${HIFI_PREFIX}.bam
+
+$SAMTOOLS index ${HIFI_PREFIX}.bam
+
+
+############################################################
+# Step 2: Align ONT reads
+############################################################
+$MINIMAP2 \
+-t ${THREADS} \
+-ax map-ont \
+${REF} \
+${ONT_READS} \
+| $SAMTOOLS sort \
+-m ${SORT_MEM} \
+-@ ${SORT_THREADS} \
+-o ${ONT_PREFIX}.bam
+
+$SAMTOOLS index ${ONT_PREFIX}.bam
+
+
+############################################################
+# Step 3: Align PacBio CLR reads
+############################################################
+$MINIMAP2 \
+-t ${THREADS} \
+-ax map-pb \
+${REF} \
+${CLR_READS} \
+| $SAMTOOLS sort \
+-m ${SORT_MEM} \
+-@ ${SORT_THREADS} \
+-o ${CLR_PREFIX}.bam
+
+$SAMTOOLS index ${CLR_PREFIX}.bam
+
+
+############################################################
+# Step 4: Generate SNF files (per-sample SV detection)
+############################################################
+$SNIFFLES \
+--input ${HIFI_PREFIX}.bam \
+--snf ${HIFI_PREFIX}.snf
+
+$SNIFFLES \
+--input ${ONT_PREFIX}.bam \
+--snf ${ONT_PREFIX}.snf
+
+$SNIFFLES \
+--input ${CLR_PREFIX}.bam \
+--snf ${CLR_PREFIX}.snf
+
+
+############################################################
+# Step 5: Merge SNF files into multi-sample VCF
+############################################################
+$SNIFFLES \
+--input ${HIFI_PREFIX}.snf ${ONT_PREFIX}.snf ${CLR_PREFIX}.snf \
+--vcf multisample.sv.vcf
+
+
+############################################################
+# Step 6 (Optional): Genotype known SVs
+############################################################
+# Example: genotype known structural variants in HiFi sample
+# known_svs.vcf should contain previously identified SVs
+
+#$SNIFFLES \
+#--input ${HIFI_PREFIX}.bam \
+#--genotype-vcf known_svs.vcf \
+#--vcf ${HIFI_PREFIX}.genotyped.vcf
+
+
+echo "======================================="
+echo " Structural Variant Detection Completed"
+echo " Output file: multisample.sv.vcf"
+echo "======================================="
