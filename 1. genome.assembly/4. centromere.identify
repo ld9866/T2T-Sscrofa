@@ -1,30 +1,90 @@
-# Quartet
-conda activate quartet
-python3 /home/lidong/Software/quarTeT-1.2.5/quartet.py CentroMiner -i tabasco.t2t.fa -t 64 -p tabasco.cen &
+#!/bin/bash
 
-# RepCent
-conda activate RepCent
-centromics -l tabasco.hifi.fastq.gz -g tabasco.fa -pre hifihic -hic merged_nodups.rechr.txt -outdir hifihic -tmpdir hifihic.tmp -ncpu 64  &>hifihic.log
-centromics -l tabasco.ont.fastq.gz -g tabasco.fa -pre onthic -hic merged_nodups.rechr.txt -outdir onthic -tmpdir onthic.tmp -ncpu 64  &>onthic.log
+###############################################################################
+# Centromere Identification & Annotation Pipeline (T2T Standard)
+#
+# Author: Lidong
+# Date: 2026-03-09
+# Description:
+#   1. Centromere region prediction via CentroMiner (quarTeT).
+#   2. Fine-mapping of centromeric repeats using RepCent (Centromics).
+#   3. Satellite DNA annotation using HiCAT (Chromosome-wise processing).
+###############################################################################
 
-# Hicat
-conda activate hicat3
-python ~/Software/HiCAT-master/HiCAT.py -i chr1.fa -t pig.cen.fasta -th 32 -o chr1 &
-python ~/Software/HiCAT-master/HiCAT.py -i chr2.fa -t pig.cen.fasta -th 32 -o chr2 &
-python ~/Software/HiCAT-master/HiCAT.py -i chr3.fa -t pig.cen.fasta -th 32 -o chr3 &
-python ~/Software/HiCAT-master/HiCAT.py -i chr4.fa -t pig.cen.fasta -th 32 -o chr4 &
-python ~/Software/HiCAT-master/HiCAT.py -i chr5.fa -t pig.cen.fasta -th 32 -o chr5 &
-python ~/Software/HiCAT-master/HiCAT.py -i chr6.fa -t pig.cen.fasta -th 32 -o chr6 &
-python ~/Software/HiCAT-master/HiCAT.py -i chr7.fa -t pig.cen.fasta -th 32 -o chr7 &
-python ~/Software/HiCAT-master/HiCAT.py -i chr8.fa -t pig.cen.fasta -th 32 -o chr8 &
-python ~/Software/HiCAT-master/HiCAT.py -i chr9.fa -t pig.cen.fasta -th 32 -o chr9 &
-python ~/Software/HiCAT-master/HiCAT.py -i chr10.fa -t pig.cen.fasta -th 32 -o chr10 &
-python ~/Software/HiCAT-master/HiCAT.py -i chr11.fa -t pig.cen.fasta -th 32 -o chr11 &
-python ~/Software/HiCAT-master/HiCAT.py -i chr12.fa -t pig.cen.fasta -th 32 -o chr12 &
-python ~/Software/HiCAT-master/HiCAT.py -i chr13.fa -t pig.cen.fasta -th 32 -o chr13 &
-python ~/Software/HiCAT-master/HiCAT.py -i chr14.fa -t pig.cen.fasta -th 32 -o chr14 &
-python ~/Software/HiCAT-master/HiCAT.py -i chr15.fa -t pig.cen.fasta -th 32 -o chr15 &
-python ~/Software/HiCAT-master/HiCAT.py -i chr16.fa -t pig.cen.fasta -th 32 -o chr16 &
-python ~/Software/HiCAT-master/HiCAT.py -i chr17.fa -t pig.cen.fasta -th 32 -o chr17 &
-python ~/Software/HiCAT-master/HiCAT.py -i chr18.fa -t pig.cen.fasta -th 32 -o chr18 &
-python ~/Software/HiCAT-master/HiCAT.py -i chrX.fa -t pig.cen.fasta -th 32 -o chrX &
+# =============================================================================
+# 1. Configuration & Tool Paths
+# =============================================================================
+QUARTET_PY="/home/lidong/Software/quarTeT-1.2.5/quartet.py"
+HICAT_PY="/home/lidong/Software/HiCAT-master/HiCAT.py"
+CEN_TEMPLATE="pig.cen.fasta"  # Reference centromere sequence template
+
+# Input Assemblies & Data
+REF_T2T="tabasco.t2t.fa"
+HIC_CONTACTS="merged_nodups.rechr.txt"
+HIFI_READS="tabasco.hifi.fastq.gz"
+ONT_READS="tabasco.ont.fastq.gz"
+
+# Resources
+THREADS=64
+HICAT_THREADS=32
+
+# =============================================================================
+# 2. Regional Centromere Prediction (quarTeT)
+# =============================================================================
+echo "[$(date)] Launching CentroMiner for centromere region prediction..."
+
+# Note: Using 'conda activate quartet' before running if necessary
+python3 ${QUARTET_PY} CentroMiner \
+    -i ${REF_T2T} \
+    -t ${THREADS} \
+    -p ${PREFIX}.cen > ${PREFIX}.centrominer.log 2>&1 &
+
+# =============================================================================
+# 3. Fine-mapping with RepCent (Centromics)
+# =============================================================================
+echo "[$(date)] Executing RepCent for multi-platform centromere mapping..."
+
+# Run RepCent for HiFi + Hi-C
+centromics -l ${HIFI_READS} -g ${REF_T2T} -pre hifihic \
+    -hic ${HIC_CONTACTS} -outdir ./centromics_hifihic \
+    -tmpdir ./tmp_hifihic -ncpu ${THREADS} &> hifihic.log
+
+# Run RepCent for ONT + Hi-C
+centromics -l ${ONT_READS} -g ${REF_T2T} -pre onthic \
+    -hic ${HIC_CONTACTS} -outdir ./centromics_onthic \
+    -tmpdir ./tmp_onthic -ncpu ${THREADS} &> onthic.log
+
+# =============================================================================
+# 4. Satellite Annotation with HiCAT (Automated Loop)
+# =============================================================================
+echo "[$(date)] Starting chromosome-wise HiCAT satellite annotation..."
+
+# Define chromosome list for the pig genome (Autosomes 1-18 and X)
+CHRS=( {1..18} X )
+
+for chr in "${CHRS[@]}"; do
+    CHR_FA="chr${chr}.fa"
+    
+    # Check if chromosome file exists before running
+    if [[ -f "$CHR_FA" ]]; then
+        echo "Processing Chromosome ${chr}..."
+        python3 ${HICAT_PY} \
+            -i ${CHR_FA} \
+            -t ${CEN_TEMPLATE} \
+            -th ${HICAT_THREADS} \
+            -o output_hicat_chr${chr} &
+    else
+        echo "Warning: ${CHR_FA} not found, skipping."
+    fi
+done
+
+# Wait for all background HiCAT processes to finish
+wait
+
+# =============================================================================
+# 5. Pipeline Summary
+# =============================================================================
+echo "-------------------------------------------------------"
+echo "Centromere Analysis Pipeline Finished at $(date)"
+echo "Check output_hicat_*/ and centromics_*/ for final annotations."
+echo "-------------------------------------------------------"
