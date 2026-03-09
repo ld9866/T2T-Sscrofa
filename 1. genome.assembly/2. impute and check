@@ -1,40 +1,98 @@
-# Gap filling using quarTeT
-python3 /home/lidong/Software/quarTeT-1.2.5/quartet.py GapFiller \
-  -d Aassembly1.fa \           # Draft assembly
-  -g Aassembly2.fa \           # Gap-filling assembly  
-  -p Aassembly1.impute1.fa \   # Output imputed assembly
-  -t 8                         # Number of threads
+#!/bin/bash
 
-# Align ONT data
-minimap2 -ax lr:hq -t 96 Assembly.fa tabasco.ont.combine.fastq.gz | \
-    samtools view -@ 64 -bS - | \
-    samtools sort -@ 64 -o Assembly.sorted.bam -
-samtools index Assembly.sorted.bam
-# Generate PAF file
-minimap2 -x lr:hq -t 96 Assembly.fa tabasco.ont.combine.fastq.gz > Assembly.ont.paf
-# Import IGV to check the gap region
+###############################################################################
+# Post-Assembly Optimization & Variant Discovery Pipeline
+#
+# Author: Lidong
+# Date: 2026-03-09
+# Description:
+#   1. Gap filling and assembly improvement via quarTeT.
+#   2. ONT Long-read alignment and preparation for IGV visualization.
+#   3. GPU-accelerated germline mapping (Parabricks) and SV detection (Parliament2).
+###############################################################################
 
-# Correct (https://github.com/slzarate/parliament2)
-# Illumina mapping 
-docker run --rm --gpus 2 \
-        --volume /home/lidong:/workdir \
-        nvcr.io/nvidia/clara/clara-parabricks:4.2.1-1 \
-        pbrun germline \
-        --gvcf \
-        --ref /workdir/tabasco.fa \
-        --in-fq /workdir/NGS.clean_1.fastq.gz /workdir/NGS.clean_1.fastq.gz \
-        "@RG\tID:tabasco\tLB:lib1\tPL:bar\tSM:tabasco\tPU:tabasco" \
-        --out-bam /workdir/1.mapping/Tibetan/Gansu/tabasco.NGS.bam \
-        --out-variants /workdir/1.mapping/Tibetan/Gansu/tabasco.gvcf
-# Detect 
-docker run \
-  -v /home/lidong/:/home/lidong/in \
-  -v /home/lidong/outputs/:/home/lidong/out \
-dnanexus/parliament2:latest \
-  --bam tabasco.NGS.bam \
-  --bai tabasco.NGS.bai \
-  -r tabasco.fa.gz \
-  --breakdancer \
-  --cnvnator \
-  --manta \
-  --genotype
+# =============================================================================
+# 1. Global Configurations & Environment
+# =============================================================================
+# Software/Docker Images
+QUARTET_PY="/home/lidong/Software/quarTeT-1.2.5/quartet.py"
+PARABRICKS_IMG="nvcr.io/nvidia/clara/clara-parabricks:4.2.1-1"
+PARLIAMENT_IMG="dnanexus/parliament2:latest"
+
+# Resources
+THREADS_MAX=96
+THREADS_SAM=64
+GPU_DEVICES="2"
+
+# File Assignments
+REF_FASTA="tabasco.fa"
+ONT_FASTQ="tabasco.ont.combine.fastq.gz"
+NGS_R1="NGS.clean_1.fastq.gz"
+NGS_R2="NGS.clean_2.fastq.gz" # 修正了重复使用 R1 的潜在风险
+
+# =============================================================================
+# 2. Assembly Improvement: Gap Filling
+# =============================================================================
+echo "[$(date)] Starting Gap Filling with quarTeT..."
+
+python3 ${QUARTET_PY} GapFiller \
+    -d Aassembly1.fa \
+    -g Aassembly2.fa \
+    -p ${PREFIX}.gapfilled.fa \
+    -t 8
+
+# =============================================================================
+# 3. Long-Read Alignment & Visualization Prep (ONT)
+# =============================================================================
+echo "[$(date)] Mapping ONT reads for assembly validation..."
+
+# Generate sorted BAM for IGV
+minimap2 -ax lr:hq -t ${THREADS_MAX} ${REF_FASTA} ${ONT_FASTQ} | \
+    samtools view -@ ${THREADS_SAM} -bS - | \
+    samtools sort -@ ${THREADS_SAM} -o ${REF_FASTA%.*}.sorted.bam -
+
+samtools index ${REF_FASTA%.*}.sorted.bam
+
+# Generate PAF for assembly-to-read consistency check
+minimap2 -x lr:hq -t ${THREADS_MAX} ${REF_FASTA} ${ONT_FASTQ} > ${REF_FASTA%.*}.ont.paf
+
+# =============================================================================
+# 4. GPU-Accelerated Mapping (Parabricks)
+# =============================================================================
+echo "[$(date)] Executing GPU-accelerated germline mapping..."
+
+docker run --rm --gpus ${GPU_DEVICES} \
+    --volume /home/lidong:/workdir \
+    ${PARABRICKS_IMG} \
+    pbrun germline \
+    --ref /workdir/${REF_FASTA} \
+    --in-fq /workdir/${NGS_R1} /workdir/${NGS_R2} \
+    --gvcf \
+    --out-bam /workdir/1.mapping/Gansu/${PREFIX}.NGS.bam \
+    --out-variants /workdir/1.mapping/Gansu/${PREFIX}.gvcf \
+    "@RG\tID:${PREFIX}\tLB:lib1\tPL:ILLUMINA\tSM:${PREFIX}\tPU:${PREFIX}"
+
+# =============================================================================
+# 5. Structural Variant Detection (Parliament2)
+# =============================================================================
+echo "[$(date)] Launching Parliament2 for SV consensus calling..."
+
+docker run --rm \
+    -v /home/lidong/:/home/lidong/in \
+    -v /home/lidong/outputs/:/home/lidong/out \
+    ${PARLIAMENT_IMG} \
+    --bam /home/lidong/in/1.mapping/Gansu/${PREFIX}.NGS.bam \
+    --bai /home/lidong/in/1.mapping/Gansu/${PREFIX}.NGS.bai \
+    -r /home/lidong/in/${REF_FASTA} \
+    --breakdancer \
+    --cnvnator \
+    --manta \
+    --genotype
+
+# =============================================================================
+# 6. Final Summary
+# =============================================================================
+echo "-------------------------------------------------------"
+echo "Refinement and Variant Analysis Pipeline Finished at $(date)"
+echo "Target: ${PREFIX}"
+echo "-------------------------------------------------------"
