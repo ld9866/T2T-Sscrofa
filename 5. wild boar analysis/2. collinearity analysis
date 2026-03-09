@@ -1,23 +1,62 @@
-#!/bin/bash
-# ===============================
+#!/usr/bin/env bash
+###############################################################################
 # Script: run_GetTwoGenomeSyn.sh
-# Purpose: Run NGenomeSyn GetTwoGenomeSyn.pl for two genomes
-# ===============================
+# Author: Lidong
+# Date: 2026-03-09
+#
+# Description:
+# Run NGenomeSyn GetTwoGenomeSyn.pl to detect genome synteny between two genomes.
+# This pipeline performs genome alignment using minimap2 and generates
+# syntenic blocks for downstream visualization and comparative genomics.
+#
+# Requirements:
+#   NGenomeSyn
+#   minimap2
+#
+###############################################################################
 
-# Path to NGenomeSyn (modify to your local installation path)
+set -euo pipefail
+
+############################
+# Global parameters
+############################
+
+THREADS=20
+
+# Path to NGenomeSyn installation
 NGS_BIN="NGenomeSyn/bin"
 
-# Input genome files (example, modify as needed)
+# Input genome files
 GENOME_A="Duroc.fa"
 GENOME_B="LW.fa"
 
 # Output prefix
 OUT_PREFIX="LW.OUT"
 
-# Number of threads
-THREADS=20
+###############################################################################
+# Step 1: Check input files
+###############################################################################
 
-# Run GetTwoGenomeSyn.pl
+echo "===== Checking input files ====="
+
+if [[ ! -f "${GENOME_A}" ]]; then
+    echo "Error: Genome A file not found -> ${GENOME_A}"
+    exit 1
+fi
+
+if [[ ! -f "${GENOME_B}" ]]; then
+    echo "Error: Genome B file not found -> ${GENOME_B}"
+    exit 1
+fi
+
+echo "Input genomes detected."
+
+###############################################################################
+# Step 2: Run NGenomeSyn synteny detection
+###############################################################################
+
+echo "===== Running genome synteny analysis ====="
+
 ${NGS_BIN}/GetTwoGenomeSyn.pl \
     -InGenomeA "${GENOME_A}" \
     -InGenomeB "${GENOME_B}" \
@@ -25,5 +64,10 @@ ${NGS_BIN}/GetTwoGenomeSyn.pl \
     -NumThreads ${THREADS} \
     -OutPrefix "${OUT_PREFIX}"
 
-echo "Job finished!"
+echo "Synteny analysis completed."
 
+###############################################################################
+# Pipeline finished
+###############################################################################
+
+echo "===== NGenomeSyn pipeline finished successfully ====="
