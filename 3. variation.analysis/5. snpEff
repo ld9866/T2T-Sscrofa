@@ -1,30 +1,135 @@
-# Install snpEff
-cd dir_path1
+#!/bin/bash
+
+############################################################
+# Variant Annotation Pipeline using snpEff
+#
+# Author: Lidong
+#
+# Description:
+# This pipeline installs and configures snpEff and builds
+# a custom annotation database for Sus scrofa using the
+# reference genome and GFF3 annotation file. The pipeline
+# then annotates SNP/Indel variants in a VCF file.
+#
+# Workflow:
+#   1. Download and install snpEff
+#   2. Prepare genome and annotation files
+#   3. Extract CDS and protein sequences
+#   4. Configure snpEff database
+#   5. Build snpEff annotation database
+#   6. Annotate VCF variants
+#
+# Requirements:
+#   Java
+#   gffread
+#   snpEff
+#
+# Input:
+#   Reference genome (FASTA)
+#   Genome annotation file (GFF3)
+#   Variant file (VCF)
+#
+# Output:
+#   Annotated VCF file
+############################################################
+
+
+# -----------------------------
+# Software paths
+# -----------------------------
+JAVA=java
+GFFREAD=gffread
+
+
+# -----------------------------
+# Directory paths
+# -----------------------------
+INSTALL_DIR=dir_path1
+GENOME_DIR=dir_path2
+VCF_DIR=dir_path3
+
+
+# -----------------------------
+# Reference genome and annotation
+# -----------------------------
+GENOME=Sscorfat2t.fa
+GFF=Sscorfat2t.gff
+
+
+# -----------------------------
+# Database name
+# -----------------------------
+DB_NAME=Sscorfa
+
+
+############################################################
+# Step 1: Install snpEff
+############################################################
+cd ${INSTALL_DIR}
+
 wget https://snpeff.odsp.astrazeneca.com/versions/snpEff_latest_core.zip
 unzip snpEff_latest_core.zip
 
-# Create the required folder
+
+############################################################
+# Step 2: Create database directory
+############################################################
 cd snpEff
-mkdir data && cd data
-mkdir Sscorfa genomes
 
-# Put the required genome files and index files into the genomes folder
-mv dir_path2/Sscorfat2t.fa ./genomes/Sscorfa.fa
-mv dir_path2/Sscorfat2t.fa.fai ./genomes/Sscorfa.fa.fai
+mkdir -p data/${DB_NAME}
+mkdir -p data/genomes
 
-# Place the annotation file in the Sscorfa folder and rename it genes.gff
-mv dir_path/Sscorfat2t.gff ./Sscorfa/genes.gff
 
-# Obtain CDS sequence and amino acid sequence
-cd Sscorfa
-gffread genes.gff -g ../genomes/Sscorfa.fa -y protein.fa -x cds.fa
+############################################################
+# Step 3: Copy genome files
+############################################################
+cp ${GENOME_DIR}/${GENOME} data/genomes/${DB_NAME}.fa
+cp ${GENOME_DIR}/${GENOME}.fai data/genomes/${DB_NAME}.fa.fai
 
-# Configure snpEf/snpEff.config file
-cd dir_path1/snpEff
-echo "Sscorfa.genome:Sscorfa" >> snpEff.config
 
-# Establish annotation database
-java -jar snpEff/snpEff.jar build -gff3 Sscorfa
+############################################################
+# Step 4: Copy annotation file
+############################################################
+cp ${GENOME_DIR}/${GFF} data/${DB_NAME}/genes.gff
 
-# Annotate the vcf file
-java -jar snpEff/snpEff.jar -v Sscorfa dir_path3/your.vcf.gz > dir_path3/your.ann.vcf
+
+############################################################
+# Step 5: Extract CDS and protein sequences
+############################################################
+cd data/${DB_NAME}
+
+$GFFREAD genes.gff \
+-g ../genomes/${DB_NAME}.fa \
+-y protein.fa \
+-x cds.fa
+
+
+############################################################
+# Step 6: Configure snpEff database
+############################################################
+cd ${INSTALL_DIR}/snpEff
+
+echo "${DB_NAME}.genome:${DB_NAME}" >> snpEff.config
+
+
+############################################################
+# Step 7: Build snpEff annotation database
+############################################################
+$JAVA -jar snpEff.jar build \
+-gff3 \
+-v ${DB_NAME}
+
+
+############################################################
+# Step 8: Annotate variants
+############################################################
+$JAVA -jar snpEff.jar \
+-v ${DB_NAME} \
+${VCF_DIR}/your.vcf.gz \
+> ${VCF_DIR}/your.ann.vcf
+
+
+echo "========================================="
+echo " Variant annotation completed"
+echo " Output file: ${VCF_DIR}/your.ann.vcf"
+echo "========================================="
