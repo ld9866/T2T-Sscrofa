@@ -1,37 +1,114 @@
-# hifiasm
-hifiasm -o tabasco.hifi.ont.hic -t 256 --h1 tabasco_1.clean.fq.gz --h2 tabasco_2.clean.fq.gz --ul tabasco.ont.fastq.gz tabasco.hifi.fq.gz 2> tabasco.hifi.ont.hic.log
-awk '/^S/{print ">"$2;print $3}' hifiasm.gfa > hifiasm.fa
+#!/bin/bash
 
-# verkko
-verkko -d tabasco.verrkko --hifi tabasco.hifi.fastq.gz --nano tabasco.ont.fastq.gz --hic1 tabasco.HiC_R1.clean.fastq.gz --hic2 tabasco.HiC_R2.clean.fastq.gz --local-memory 600 2>log
+###############################################################################
+# Genome Assembly & Scaffolding Pipeline for Tabasco Project
+#
+# Author: Lidong
+# Date: 2026-03-09
+# Description: 
+#   A comprehensive workflow integrating HiFi, ONT Ultra-Long, and Hi-C data.
+#   Includes De Novo Assembly (Hifiasm/Verkko/NextDenovo), 
+#   Hi-C Scaffolding (Juicer/3D-DNA), and Organelle (Mito) Assembly.
+###############################################################################
 
-# nextdenovo
-nextDenovo run.cfg
+# =============================================================================
+# 1. Global Configurations & Path Setup
+# =============================================================================
+# Software Binaries
+HIFIASM="/home/lidong/Software/hifiasm-0.25.0/hifiasm"
+VERKKO="verkko"
+NEXTDENOVO="nextDenovo"
+JUICER_DIR="/home/lidong/Software/juicer-1.6"
+TD_DNA_DIR="/home/lidong/Software/3d-dna-201008"
 
-# Hi-C
-# prepare
-python /home/lidong/Software/juicer-1.6/misc/generate_site_positions.py MboI draft.genome tabasco.fasta
-awk 'BEGIN{OFS="\t"}{print $1, $NF}' draft.genome_MboI.txt > draft.genome.chrom.sizes
-# jucier
-/home/lidong/Software/juicer-1.6/CPU/juicer.sh -g tabasco \
--s MboI \
--D /home/lidong/Software/juicer-1.6 -z /ref/tabasco.fasta \
--y /ref/draft.genome_MboI.txt \
--p /ref/draft.genome.chrom.sizes \
--t 128 &>juicer.log
+# Project Metadata
+PREFIX="tabasco"
+THREADS=256
+MEM_LOCAL=600  # GB
 
-# 3DDNA-human-correct
-awk -f /home/lidong/Software/3d-dna-201008/utils/wrap-fasta-sequence.awk tabasco.fa > tabasco.wrapped.fa
-/home/lidong/Software/3d-dna-201008/run-asm-pipeline.sh -r 0 tabasco.wrapped.fa merged_nodups.txt
-# human check
-/home/lidong/Software/3d-dna-201008/run-asm-pipeline-post-review.sh -r tabasco.wrapped.assembly tabasco.wrapped.fa merged_nodups.txt 
+# Input Data Paths
+HIFI_READS="tabasco.hifi.fq.gz"
+ONT_UL="tabasco.ont.fastq.gz"
+HIC_R1="tabasco.HiC_R1.clean.fastq.gz"
+HIC_R2="tabasco.HiC_R2.clean.fastq.gz"
 
-# Mitochondrial assembly
+# =============================================================================
+# 2. De Novo Assembly Module
+# =============================================================================
+
+## --- Phase 2a: Hifiasm (Integrated HiFi + ONT + Hi-C) ---
+echo "[$(date)] Starting Hifiasm assembly..."
+$HIFIASM -o ${PREFIX}.hifi.ont.hic \
+    -t ${THREADS} \
+    --h1 ${HIC_R1} --h2 ${HIC_R2} \
+    --ul ${ONT_UL} \
+    ${HIFI_READS} 2> ${PREFIX}.hifi.ont.hic.log
+
+# Extract FASTA from GFA
+awk '/^S/{print ">"$2;print $3}' ${PREFIX}.hifi.ont.hic.p_ctg.gfa > ${PREFIX}.hifiasm.fa
+
+## --- Phase 2b: Verkko Assembly ---
+echo "[$(date)] Starting Verkko assembly..."
+$VERKKO -d ${PREFIX}.verkko \
+    --hifi ${HIFI_READS} \
+    --nano ${ONT_UL} \
+    --hic1 ${HIC_R1} --hic2 ${HIC_R2} \
+    --local-memory ${MEM_LOCAL} 2> ${PREFIX}.verkko.log
+
+## --- Phase 2c: NextDenovo Assembly ---
+echo "[$(date)] Starting NextDenovo assembly..."
+$NEXTDENOVO run.cfg
+
+# =============================================================================
+# 3. Hi-C Scaffolding Module (Juicer + 3D-DNA)
+# =============================================================================
+# Note: Using MboI restriction enzyme by default
+DRAFT_GENOME="${PREFIX}.hifiasm.fa"
+GENOME_SIZE="draft.genome"
+
+echo "[$(date)] Preparing Hi-C reference files..."
+python ${JUICER_DIR}/misc/generate_site_positions.py MboI ${GENOME_SIZE} ${DRAFT_GENOME}
+awk 'BEGIN{OFS="\t"}{print $1, $NF}' ${GENOME_SIZE}_MboI.txt > ${GENOME_SIZE}.chrom.sizes
+
+echo "[$(date)] Running Juicer pipeline..."
+${JUICER_DIR}/CPU/juicer.sh \
+    -g ${PREFIX} \
+    -s MboI \
+    -D ${JUICER_DIR} \
+    -z ${DRAFT_GENOME} \
+    -y ${GENOME_SIZE}_MboI.txt \
+    -p ${GENOME_SIZE}.chrom.sizes \
+    -t 128 &> juicer_pipeline.log
+
+echo "[$(date)] Starting 3D-DNA scaffolding..."
+# Standardize FASTA wrapping for 3D-DNA compatibility
+awk -f ${TD_DNA_DIR}/utils/wrap-fasta-sequence.awk ${DRAFT_GENOME} > ${PREFIX}.wrapped.fa
+
+# Run assembly pipeline
+${TD_DNA_DIR}/run-asm-pipeline.sh -r 0 ${PREFIX}.wrapped.fa aligned/merged_nodups.txt
+
+# Post-review correction (Manual check required in Juicebox)
+# ${TD_DNA_DIR}/run-asm-pipeline-post-review.sh -r ${PREFIX}.wrapped.assembly ${PREFIX}.wrapped.fa aligned/merged_nodups.txt
+
+# =============================================================================
+# 4. Mitochondrial Genome Assembly (MitoHiFi)
+# =============================================================================
+echo "[$(date)] Running MitoHiFi via Docker..."
+# Parameters: -c (Contigs), -f (Reference Fasta), -g (Reference GenBank)
 docker run --rm \
---volume /home/lidong:/work \
-ghcr.io/marcelauliano/mitohifi:master \
-mitohifi.py \
--c /work/tabasco.hifi.bp.p_ctg.fa \
--f /work/sequence.fasta \
--g /work/sequence.gb \
--t 64 -a animal
+    --volume $(pwd):/work \
+    ghcr.io/marcelauliano/mitohifi:master \
+    mitohifi.py \
+    -c /work/${PREFIX}.hifi.ont.hic.p_ctg.fa \
+    -f /work/ref_mitochondrion.fasta \
+    -g /work/ref_mitochondrion.gb \
+    -t 64 -a animal
+
+# =============================================================================
+# 5. Completion Summary
+# =============================================================================
+echo "-------------------------------------------------------"
+echo "Pipeline Completed Successfully at $(date)"
+echo "Principal Assembly: ${PREFIX}.hifiasm.fa"
+echo "Final Scaffolding: ${PREFIX}.wrapped.final.fasta"
+echo "-------------------------------------------------------"
