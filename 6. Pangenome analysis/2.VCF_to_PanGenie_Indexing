@@ -1,0 +1,85 @@
+#!/bin/bash
+
+###############################################################################
+# Pangenome Genotyping: VCF Pre-processing & PanGenie Indexing
+#
+# Project: Tabasco Pig Genome (T2T) - Population Genotyping
+# Script: VCF_to_PanGenie_Indexing.sh
+# Author: Lidong
+# Date: 2026-03-30
+# Version: 1.0
+#
+# Description:
+#    This script converts a Cactus/MC-generated VCF into a PanGenie-compatible 
+#    index. It includes VCF normalization (bcftools), decomposition of 
+#    complex variants, and k-mer based indexing for short-read genotyping.
+###############################################################################
+
+# =============================================================================
+# 1. Global Configurations
+# =============================================================================
+# Tools
+BCFTOOLS="bcftools"
+PANGENIE="PanGenie"
+VCF_LIB_PREP="vcf-lib-prep" # Part of PanGenie toolkit
+
+# Resources
+THREADS=64
+KMER_SIZE=31
+
+# Input/Output
+REF_FASTA="tabasco_reference.fa"
+INPUT_VCF="primates-pg.vcf.gz"
+OUT_DIR="./pangenie_index"
+PREFIX="tabasco_pg"
+
+# =============================================================================
+# 2. Workspace Initialization
+# =============================================================================
+echo "[$(date)] INFO: Preparing workspace for PanGenie indexing..."
+mkdir -p ${OUT_DIR}
+
+# =============================================================================
+# 3. Phase I: VCF Normalization & Cleaning
+# =============================================================================
+# PanGenie requires a clean, decomposed VCF to accurately count k-mers
+echo "[$(date)] STAGE 1: Normalizing VCF and decomposing multiallelic sites..."
+
+${BCFTOOLS} view -v snps,indels ${INPUT_VCF} | \
+    ${BCFTOOLS} norm -m -any | \
+    ${BCFTOOLS} norm -f ${REF_FASTA} \
+    -o ${OUT_DIR}/${PREFIX}.norm.vcf.gz -O z
+
+${BCFTOOLS} index -t ${OUT_DIR}/${PREFIX}.norm.vcf.gz
+
+# =============================================================================
+# 4. Phase II: PanGenie Library Preparation
+# =============================================================================
+# Extracting paths and unique k-mers from the VCF
+echo "[$(date)] STAGE 2: Running PanGenie library preparation..."
+
+# This step formats the VCF to ensure it contains only relevant variation 
+# and prepares the reference sequences.
+${PANGENIE} -v ${OUT_DIR}/${PREFIX}.norm.vcf.gz \
+    -r ${REF_FASTA} \
+    -o ${OUT_DIR}/${PREFIX}_index \
+    -k ${KMER_SIZE} \
+    -t ${THREADS} \
+    -j ${THREADS} \
+    --ignore-unnamed-reg
+
+# =============================================================================
+# 5. Phase III: Index Verification
+# =============================================================================
+if [ -f "${OUT_DIR}/${PREFIX}_index_fastas.fa" ]; then
+    echo "-----------------------------------------------------------------------"
+    echo "PanGenie Indexing Completed Successfully!"
+    echo "Timestamp: $(date)"
+    echo "Files Generated:"
+    echo " - Normalized VCF: ${OUT_DIR}/${PREFIX}.norm.vcf.gz"
+    echo " - PanGenie Database: ${OUT_DIR}/${PREFIX}_index_*.fasta/kmer"
+    echo "-----------------------------------------------------------------------"
+else
+    echo "ERROR: PanGenie indexing failed. Please check the logs."
+    exit 1
+fi
