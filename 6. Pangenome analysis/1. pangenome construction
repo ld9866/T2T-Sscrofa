@@ -1,1 +1,90 @@
+#!/bin/bash
 
+###############################################################################
+# Swine/Primate Pangenome Construction Pipeline (Cactus-GPU)
+#
+# Project: Tabasco Pangenome Analysis
+# Author:Lidong
+# Date: 2026-03-30
+# Version: 1.0
+#
+# Description:
+#    This script executes the Cactus-pangenome pipeline using a GPU-accelerated 
+#    Docker container. It generates a comprehensive pangenome graph (GFA/GBZ), 
+#    indexes for the Giraffe mapper, and VCF representations of variations.
+###############################################################################
+
+# =============================================================================
+# 1. Global Configurations & Environment
+# =============================================================================
+# Docker/Container Settings
+IMAGE_TAG="quay.io/comparative-genomics-toolkit/cactus:v3.0.1-gpu"
+DATA_DIR="/home/lidong/Minigraph.cactus/01.Tabasco"
+MOUNT_POINT="/data"
+
+# Input & Metadata
+FA_LIST="./fa.list"         # List of input assembly paths
+REF_NAME="tabasco"          # Reference genome name in the graph
+JOB_STORE="./js"            # Cactus job store directory
+OUT_DIR="primates-pg"
+OUT_NAME="primates-pg"
+
+# Resource Allocation
+MAX_CORES=256
+MG_CORES=256
+MAX_MEM="1000G"
+
+# =============================================================================
+# 2. Pre-flight Checks
+# =============================================================================
+echo "[$(date)] INFO: Starting Pangenome Construction Pipeline..."
+
+if [ ! -f "$FA_LIST" ]; then
+    echo "ERROR: Input file list $FA_LIST not found!"
+    exit 1
+fi
+
+if [ ! -d "$OUT_DIR" ]; then
+    echo "INFO: Creating output directory: $OUT_DIR"
+    mkdir -p "$OUT_DIR"
+fi
+
+# =============================================================================
+# 3. Execution: Cactus-Pangenome (GPU-Accelerated)
+# =============================================================================
+echo "[$(date)] STAGE: Running Cactus-Pangenome..."
+
+# We use 'docker run' with --gpus all for GPU acceleration
+# Note: Ensure NVIDIA Container Toolkit is installed.
+docker run -it --rm --gpus all \
+    -v "${DATA_DIR}:${MOUNT_POINT}" \
+    -w "${MOUNT_POINT}" \
+    "${IMAGE_TAG}" \
+    cactus-pangenome "${JOB_STORE}" "${FA_LIST}" \
+    --outDir "${OUT_DIR}" \
+    --outName "${OUT_NAME}" \
+    --reference "${REF_NAME}" \
+    --vcf \
+    --giraffe \
+    --gfa \
+    --gbz \
+    --xg \
+    --chrom-vg \
+    --maxCores "${MAX_CORES}" \
+    --maxMemory "${MAX_MEM}" \
+    --mgCores "${MG_CORES}"
+
+# =============================================================================
+# 4. Pipeline Completion & Summary
+# =============================================================================
+if [ $? -eq 0 ]; then
+    echo "-----------------------------------------------------------------------"
+    echo "Pangenome Construction Completed Successfully!"
+    echo "Timestamp: $(date)"
+    echo "Output Location: ${DATA_DIR}/${OUT_DIR}"
+    echo "Generated Formats: GFA, GBZ, XG, VCF, Giraffe Indexes"
+    echo "-----------------------------------------------------------------------"
+else
+    echo "ERROR: Cactus-pangenome pipeline failed. Check Docker logs for details."
+    exit 1
+fi
