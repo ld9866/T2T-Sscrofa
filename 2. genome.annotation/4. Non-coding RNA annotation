@@ -1,0 +1,128 @@
+#!/bin/bash
+
+###############################################################################
+# Genome-wide Non-coding RNA (ncRNA) Annotation & Refinement Pipeline
+#
+# Project: Tabasco Pig Genome (T2T)
+# Script: NC-RNA_Annotation_Pipeline.sh
+# Author: Lidong
+# Date: 2026-03-30
+# Version: 1.2
+#
+# Description:
+#    A comprehensive pipeline for predicting and filtering ncRNAs:
+#    1. Infernal (CMscan) for Rfam-based annotation (miRNA, snRNA, snoRNA).
+#    2. tRNAscan-SE for high-sensitivity tRNA detection.
+#    3. LncRNA extraction and sequence-level characterization.
+#    4. Advanced filtering for miRNA length and E-values.
+###############################################################################
+
+# =============================================================================
+# 1. Global Configurations & Paths
+# =============================================================================
+# Software Paths
+TRNASCAN_SE="/home/lidong/Software/tRNAscan-install/bin/tRNAscan-SE"
+RFAM_DB="/home/lidong/lidong/27.non_coding.RNA/Rfam/Rfam.cm"
+RFAM_CLANIN="/home/lidong/lidong/27.non_coding.RNA/Rfam/Rfam.clanin"
+CONVERT_SCRIPT="infernal-tblout2gff.pl"
+
+# Input Files
+GENOME_FA="Tabasco.fa"
+GENOME_GFF="Tabasco.complete.genomic.gff"
+PREFIX="Tabasco"
+
+# Resource Allocation
+THREADS=128
+Z_VALUE=2633  # Rfam Z-parameter
+
+# =============================================================================
+# 2. TASK CONTROL
+# =============================================================================
+RUN_RFAM=1
+RUN_TRNA=1
+RUN_LNCRNA=1
+RUN_FILTER=1
+
+# =============================================================================
+# 3. Phase I: Infernal (CMscan) - General ncRNA Annotation
+# =============================================================================
+if [ $RUN_RFAM -eq 1 ]; then
+    echo "[$(date)] STAGE 1: Running CMscan against Rfam database..."
+    
+    cmscan -Z ${Z_VALUE} --rfam --cut_ga --nohmmonly --fmt 2 --cpu ${THREADS} \
+        --tblout ${PREFIX}.tblout \
+        -o ${PREFIX}.cmscan.out \
+        --clanin ${RFAM_CLANIN} \
+        ${RFAM_DB} ${GENOME_FA}
+    
+    # Convert tblout to GFF3
+    echo "[$(date)] Converting CMscan output to GFF3..."
+    perl ${CONVERT_SCRIPT} --cmscan --fmt2 ${PREFIX}.tblout > ${PREFIX}.infernal.ncRNA.gff3
+fi
+
+# =============================================================================
+# 4. Phase II: tRNAscan-SE - Specialized tRNA Prediction
+# =============================================================================
+if [ $RUN_TRNA -eq 1 ]; then
+    echo "[$(date)] STAGE 2: Running tRNAscan-SE (Eukaryotic mode)..."
+    
+    ${TRNASCAN_SE} --thread ${THREADS} -E \
+        -o ${PREFIX}.tRNA.out \
+        -m ${PREFIX}.tRNA.stat \
+        ${GENOME_FA}
+fi
+
+# =============================================================================
+# 5. Phase III: LncRNA Extraction & Characterization
+# =============================================================================
+if [ $RUN_LNCRNA -eq 1 ]; then
+    echo "[$(date)] STAGE 3: Extracting LncRNA transcripts and statistics..."
+
+    # Extract LncRNA IDs and generate FASTA
+    grep "lncRNA" ${GENOME_GFF} | cut -f9 | cut -d';' -f1 | sed 's/ID=//' > ${PREFIX}.lncRNA.id.list
+    
+    gffread ${GENOME_GFF} -g ${GENOME_FA} \
+        --ids ${PREFIX}.lncRNA.id.list \
+        -w ${PREFIX}.lncRNA_transcripts.fa
+
+    # Count unique LncRNA gene loci
+    LNC_COUNT=$(grep "lnc_RNA" ${GENOME_GFF} | awk '$3=="lnc_RNA"' | cut -f9 | sed 's/.*Parent=\([^;]*\).*/\1/' | sort -u | wc -l)
+    echo "Total unique LncRNA loci: ${LNC_COUNT}"
+fi
+
+# =============================================================================
+# 4. Phase IV: Advanced Filtering & Sub-type Classification
+# =============================================================================
+if [ $RUN_FILTER -eq 1 ]; then
+    echo "[$(date)] STAGE 4: Refining miRNA and snRNA annotations..."
+
+    # 4a. miRNA Filtering (Length: 60-120bp, E-value < 1e-10)
+    grep "mir" ${PREFIX}.infernal.ncRNA.gff3 > ${PREFIX}.miRNA.raw.list
+    
+    awk -F'[ \t=]+' '{
+        len = $5 - $4 + 1;
+        abs_len = (len<0 ? -len : len);
+        e_val = $10;
+        if (abs_len >= 60 && abs_len <= 120 && e_val < 1e-10) { print $0 }
+    }' ${PREFIX}.miRNA.raw.list > ${PREFIX}.miRNA.filtered.gff3
+
+    # 4b. snRNA Extraction based on Rfam mapping
+    # Assuming rfam_anno.txt contains category mapping
+    if [ -f "rfam_anno.txt" ]; then
+        awk 'NR==FNR{a[$2]=$NF;next} a[$3]=="snRNA"' rfam_anno.txt ${PREFIX}.infernal.ncRNA.gff3 \
+        > ${PREFIX}.snRNA.refined.gff3
+    fi
+fi
+
+# =============================================================================
+# 5. Pipeline Completion
+# =============================================================================
+echo "-------------------------------------------------------"
+echo "NC-RNA Annotation Pipeline for Tabasco Completed!"
+echo "Timestamp: $(date)"
+echo "Main Outputs:"
+echo " - General ncRNA: ${PREFIX}.infernal.ncRNA.gff3"
+echo " - tRNA: ${PREFIX}.tRNA.out"
+echo " - LncRNA: ${PREFIX}.lncRNA_transcripts.fa"
+echo " - Filtered miRNA: ${PREFIX}.miRNA.filtered.gff3"
+echo "-------------------------------------------------------"
